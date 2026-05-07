@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Activity, BarChart3, Database, FileUp, LineChart, RefreshCw } from "lucide-react";
 import { CartesianGrid, Legend, Line, LineChart as ReLineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";

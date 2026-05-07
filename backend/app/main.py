@@ -1,7 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
 
 from .database import init_db, list_history, save_history
 from .schemas import ArimaRequest, CompareRequest, FundamentalRequest, UploadResponse
@@ -21,6 +24,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tentukan path folder frontend/dist
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+
+# Mount folder assets jika folder dist sudah ada
+if os.path.exists(os.path.join(FRONTEND_DIR, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
 
 
 @app.on_event("startup")
@@ -77,3 +87,13 @@ def analyze_compare(req: CompareRequest):
 @app.get("/history")
 def history(limit: int = 20):
     return {"items": list_history(limit)}
+
+
+# Catch-all route untuk melayani frontend (React)
+@app.get("/{path_name:path}")
+def serve_frontend(path_name: str):
+    # Jika request bukan untuk API, kirimkan index.html
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "Frontend build not found. Please run 'npm run build' in the frontend directory."}
