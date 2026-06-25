@@ -22,15 +22,29 @@ def main():
     # 2. Run Backend
     print("\n--- Starting Unified Server ---")
     backend_dir = os.path.join(os.getcwd(), "backend")
-    venv_python = os.path.join(backend_dir, ".venv", "Scripts", "python.exe")
     
-    if os.path.exists(venv_python):
+    # Cek venv di root directory dahulu, lalu di backend directory
+    venv_root = os.path.join(os.getcwd(), ".venv", "Scripts", "python.exe")
+    venv_backend = os.path.join(backend_dir, ".venv", "Scripts", "python.exe")
+    
+    if os.path.exists(venv_root):
+        venv_python = venv_root
+    elif os.path.exists(venv_backend):
+        venv_python = venv_backend
+    else:
+        venv_python = None
+
+    if venv_python:
         print(f"Using virtual environment: {venv_python}")
         # Jalankan uvicorn melalui python venv
         cmd = f'"{venv_python}" -m uvicorn app.main:app --reload --port 8000'
     else:
         print("Virtual environment not found, trying global python...")
-        cmd = "python -m uvicorn app.main:app --reload --port 8000"
+        # Gunakan 'py' (Python Launcher) jika 'python' tidak tersedia di PATH
+        import shutil
+        python_cmd = "python" if shutil.which("python") and not "WindowsApps" in (shutil.which("python") or "") else "py"
+        cmd = f"{python_cmd} -m uvicorn app.main:app --reload --port 8000"
+
 
     try:
         run_command(cmd, cwd=backend_dir)

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -64,3 +64,22 @@ def list_history(limit: int = 20) -> List[Dict[str, Any]]:
             (limit,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def get_latest_analysis() -> Dict[str, Any] | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT result_json
+            FROM analysis_history
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row:
+            try:
+                return json.loads(row["result_json"])
+            except Exception:
+                return None
+        return None
+

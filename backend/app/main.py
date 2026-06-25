@@ -1,12 +1,10 @@
-from __future__ import annotations
-
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-from .database import init_db, list_history, save_history
+from .database import init_db, list_history, save_history, get_latest_analysis
 from .schemas import ArimaRequest, CompareRequest, FundamentalRequest, UploadResponse
 from .services.arima_service import evaluate_scenarios, run_arima
 from .services.comparison_service import build_recommendation
@@ -33,9 +31,42 @@ if os.path.exists(os.path.join(FRONTEND_DIR, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
 
 
+def verify_admin(x_role: str = Header(None)):
+    if x_role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Akses ditolak: Hanya Admin yang dapat mengunggah atau memproses data.",
+        )
+
+
+def check_and_populate_default_data():
+    try:
+        if not list_history(limit=1):
+            print("Belum ada riwayat analisis. Menyiapkan analisis awal dari dataset contoh...")
+            ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            price_sample = os.path.join(ROOT_DIR, "dataset", "sample_price_tlkm.csv")
+            financial_sample = os.path.join(ROOT_DIR, "dataset", "sample_financial_tlkm.csv")
+            
+            if os.path.exists(price_sample) and os.path.exists(financial_sample):
+                price_df = load_csv(price_sample)
+                financial_df = load_csv(financial_sample)
+                # Definisikan parameter model default (p=2, d=1, q=2)
+                arima = run_arima(price_df, horizon=14, train_ratio=0.8, p=2, d=1, q=2)
+                fundamental = run_fundamental(financial_df, per_wajar=8.0)
+                recommendation = build_recommendation(arima, fundamental)
+                result = {"arima": arima, "fundamental": fundamental, "recommendation": recommendation}
+                save_history("COMPARE", result, price_file=price_sample, financial_file=financial_sample)
+                print("Analisis awal dari dataset contoh berhasil dimuat.")
+            else:
+                print(f"Dataset contoh tidak ditemukan di: {price_sample} atau {financial_sample}")
+    except Exception as e:
+        print(f"Gagal memuat analisis awal secara otomatis: {e}")
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    check_and_populate_default_data()
 
 
 @app.get("/health")
@@ -43,19 +74,30 @@ def health():
     return {"ok": True, "name": APP_NAME}
 
 
-@app.post("/upload/price", response_model=UploadResponse)
+@app.get("/analysis/latest")
+def latest_analysis():
+    data = get_latest_analysis()
+    if not data:
+        raise HTTPException(
+            status_code=404,
+            detail="Belum ada riwayat analisis. Silakan jalankan analisis sebagai Admin.",
+        )
+    return data
+
+
+@app.post("/upload/price", response_model=UploadResponse, dependencies=[Depends(verify_admin)])
 def upload_price(file: UploadFile = File(...)):
     path, meta = save_upload(file, "price")
     return {"file_path": path, **meta}
 
 
-@app.post("/upload/financial", response_model=UploadResponse)
+@app.post("/upload/financial", response_model=UploadResponse, dependencies=[Depends(verify_admin)])
 def upload_financial(file: UploadFile = File(...)):
     path, meta = save_upload(file, "financial")
     return {"file_path": path, **meta}
 
 
-@app.post("/analyze/arima")
+@app.post("/analyze/arima", dependencies=[Depends(verify_admin)])
 def analyze_arima(req: ArimaRequest):
     df = load_csv(req.price_csv_path)
     result = run_arima(df, req.horizon, req.train_ratio, req.p, req.d, req.q)
@@ -64,7 +106,7 @@ def analyze_arima(req: ArimaRequest):
     return result
 
 
-@app.post("/analyze/fundamental")
+@app.post("/analyze/fundamental", dependencies=[Depends(verify_admin)])
 def analyze_fundamental(req: FundamentalRequest):
     df = load_csv(req.financial_csv_path)
     result = run_fundamental(df, req.per_wajar)
@@ -72,7 +114,7 @@ def analyze_fundamental(req: FundamentalRequest):
     return result
 
 
-@app.post("/analyze/compare")
+@app.post("/analyze/compare", dependencies=[Depends(verify_admin)])
 def analyze_compare(req: CompareRequest):
     price_df = load_csv(req.price_csv_path)
     financial_df = load_csv(req.financial_csv_path)
@@ -97,3 +139,4 @@ def serve_frontend(path_name: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"error": "Frontend build not found. Please run 'npm run build' in the frontend directory."}
+
