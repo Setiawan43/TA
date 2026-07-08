@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import io
 import os
@@ -32,7 +32,9 @@ def save_upload(upload: UploadFile, prefix: str) -> Tuple[str, Dict[str, Any]]:
     file_name = f"{prefix}_{uuid.uuid4().hex}.csv"
     path = os.path.join(UPLOAD_DIR, file_name)
     df.to_csv(path, index=False)
-    return path, {"rows": int(len(df)), "columns": list(df.columns)}
+    # Return first 50 rows as preview to avoid massive JSON payloads for large datasets
+    preview = df.head(50).to_dict(orient="records")
+    return path, {"rows": int(len(df)), "columns": list(df.columns), "preview_data": preview}
 
 
 def load_csv(path: str) -> pd.DataFrame:
@@ -42,6 +44,39 @@ def load_csv(path: str) -> pd.DataFrame:
         return pd.read_csv(path)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Gagal membaca file CSV: {exc}") from exc
+
+
+def list_files() -> list[Dict[str, Any]]:
+    files_list = []
+    if os.path.exists(UPLOAD_DIR):
+        for filename in os.listdir(UPLOAD_DIR):
+            if filename.endswith(".csv"):
+                file_path = os.path.join(UPLOAD_DIR, filename)
+                stat = os.stat(file_path)
+                files_list.append({
+                    "filename": filename,
+                    "path": file_path,
+                    "size_bytes": stat.st_size,
+                    "created_at": stat.st_ctime
+                })
+    # Sort by created_at descending
+    files_list.sort(key=lambda x: x["created_at"], reverse=True)
+    return files_list
+
+
+def delete_file(filename: str) -> bool:
+    if not filename.endswith(".csv") or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            return True
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Gagal menghapus file: {exc}")
+    else:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan.")
+
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:

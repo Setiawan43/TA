@@ -16,8 +16,8 @@ def main():
     frontend_dir = os.path.join(os.getcwd(), "frontend")
     # Pastikan node_modules terinstal
     if not os.path.exists(os.path.join(frontend_dir, "node_modules")):
-        run_command("npm install", cwd=frontend_dir)
-    run_command("npm run build", cwd=frontend_dir)
+        run_command("cmd /c npm install", cwd=frontend_dir)
+    run_command("cmd /c npm run build", cwd=frontend_dir)
 
     # 2. Run Backend
     print("\n--- Starting Unified Server ---")
