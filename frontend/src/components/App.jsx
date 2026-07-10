@@ -256,41 +256,123 @@ function App({ currentUser, onLogout, onUpdateUser }) {
     finally { setIsArimaLoading(false); }
   };
 
+  // ── Upload handlers per modul ─────────────────────────────────────────────
+
+  const handleUploadArima = async (e) => {
+    e.preventDefault();
+    if (role !== "admin") return;
+    if (!priceFile) { setStatus("Silakan pilih file CSV harga terlebih dahulu."); return; }
+    try {
+      setIsUploading(true);
+      setStatus("Mengunggah data harga saham...");
+      const res = await uploadCsv("/upload/price", priceFile);
+      const newPricePath = res.file_path;
+      setPendingPricePath(newPricePath);
+      if (res.preview_data) {
+        setUploadedPreview({ filename: priceFile.name, columns: res.columns, data: res.preview_data, rowsTotal: res.rows });
+      }
+      setPriceFile(null);
+      // Jalankan analisis ARIMA
+      try {
+        setIsAnalyzing(true);
+        setStatus("Menjalankan analisis ARIMA...");
+        const arimaData = await postJson("/analyze/arima", {
+          price_csv_path: newPricePath,
+          horizon: Number(params.horizon),
+          train_ratio: Number(params.train_ratio),
+          p: params.p === "" ? null : Number(params.p),
+          d: params.d === "" ? null : Number(params.d),
+          q: params.q === "" ? null : Number(params.q),
+        });
+        // Simpan hasil ARIMA, pertahankan fundamental jika ada
+        // Jika fundamental juga ada → jalankan compare untuk rekomendasi gabungan
+        const currentFinancialPath = pendingFinancialPath || result?.fundamental?.financial_csv_path;
+        if (currentFinancialPath) {
+          const compareData = await postJson("/analyze/compare", {
+            price_csv_path: newPricePath,
+            financial_csv_path: currentFinancialPath,
+            horizon: Number(params.horizon),
+            train_ratio: Number(params.train_ratio),
+            per_wajar: Number(params.per_wajar),
+            p: params.p === "" ? null : Number(params.p),
+            d: params.d === "" ? null : Number(params.d),
+            q: params.q === "" ? null : Number(params.q),
+          });
+          setResult(compareData);
+        } else {
+          setResult(prev => ({ ...(prev || {}), arima: arimaData, recommendation: arimaData.recommendation }));
+        }
+        setStatus("Analisis ARIMA selesai.");
+        await loadHistory();
+      } catch (err) { setStatus(`Analisis ARIMA gagal: ${err.message}`); }
+      finally { setIsAnalyzing(false); }
+      await loadFiles();
+      setUploadSuccess({ filename: priceFile.name || res.rows + " baris", rows: res.rows, type: "arima" });
+      setTimeout(() => { setUploadSuccess(null); }, 2500);
+    } catch (error) { setStatus(`Gagal mengunggah: ${error.message}`); }
+    finally { setIsUploading(false); }
+  };
+
+  const handleUploadFundamental = async (e) => {
+    e.preventDefault();
+    if (role !== "admin") return;
+    if (!financialFile) { setStatus("Silakan pilih file CSV laporan keuangan terlebih dahulu."); return; }
+    try {
+      setIsUploading(true);
+      setStatus("Mengunggah data laporan keuangan...");
+      const res = await uploadCsv("/upload/financial", financialFile);
+      const newFinancialPath = res.file_path;
+      setPendingFinancialPath(newFinancialPath);
+      if (res.preview_data) {
+        setUploadedPreview({ filename: financialFile.name, columns: res.columns, data: res.preview_data, rowsTotal: res.rows });
+      }
+      setFinancialFile(null);
+      // Jalankan analisis Fundamental
+      try {
+        setIsAnalyzing(true);
+        setStatus("Menjalankan analisis fundamental...");
+        const fundData = await postJson("/analyze/fundamental", {
+          financial_csv_path: newFinancialPath,
+          per_wajar: Number(params.per_wajar),
+        });
+        // Simpan hasil Fundamental, pertahankan ARIMA jika ada
+        // Jika ARIMA juga ada → jalankan compare untuk rekomendasi gabungan
+        const currentPricePath = pendingPricePath || result?.arima?.preprocessing?.price_csv_path;
+        if (currentPricePath) {
+          const compareData = await postJson("/analyze/compare", {
+            price_csv_path: currentPricePath,
+            financial_csv_path: newFinancialPath,
+            horizon: Number(params.horizon),
+            train_ratio: Number(params.train_ratio),
+            per_wajar: Number(params.per_wajar),
+            p: params.p === "" ? null : Number(params.p),
+            d: params.d === "" ? null : Number(params.d),
+            q: params.q === "" ? null : Number(params.q),
+          });
+          setResult(compareData);
+        } else {
+          setResult(prev => ({ ...(prev || {}), fundamental: fundData, recommendation: fundData.recommendation }));
+        }
+        setStatus("Analisis fundamental selesai.");
+        await loadHistory();
+      } catch (err) { setStatus(`Analisis fundamental gagal: ${err.message}`); }
+      finally { setIsAnalyzing(false); }
+      await loadFiles();
+      setUploadSuccess({ filename: financialFile.name || res.rows + " baris", rows: res.rows, type: "fundamental" });
+      setTimeout(() => { setUploadSuccess(null); }, 2500);
+    } catch (error) { setStatus(`Gagal mengunggah: ${error.message}`); }
+    finally { setIsUploading(false); }
+  };
+
+  // Legacy handler (tidak dipakai lagi, dipertahankan untuk kompatibilitas test)
   const handleUpload = async (e) => {
     e.preventDefault();
     if (role !== "admin") return;
     const isPriceUpload = uploadCategory === "price_historical";
-    const file = isPriceUpload ? priceFile : financialFile;
-    if (!file) { setStatus("Silakan pilih file CSV terlebih dahulu."); return; }
-    try {
-      setIsUploading(true);
-      setStatus("Mengunggah dan memproses data...");
-      const endpoint = isPriceUpload ? "/upload/price" : "/upload/financial";
-      const res = await uploadCsv(endpoint, file);
-      const newFilePath = res.file_path;
-      setStatus(`Upload sukses: ${file.name} (${res.rows} baris data diproses).`);
-      if (res.preview_data) {
-        setUploadedPreview({ filename: file.name, columns: res.columns, data: res.preview_data, rowsTotal: res.rows });
-      }
-      if (isPriceUpload) setPendingPricePath(newFilePath); else setPendingFinancialPath(newFilePath);
-      if (isPriceUpload) setPriceFile(null); else setFinancialFile(null);
-      // Run combined compare analysis so recommendation is always populated
-      const newPricePath = isPriceUpload ? newFilePath : (pendingPricePath || result?.arima?.preprocessing?.price_csv_path);
-      const newFinancialPath = isPriceUpload ? (pendingFinancialPath || result?.fundamental?.financial_csv_path) : newFilePath;
-      await handleAnalyzeCompare(newPricePath, newFinancialPath);
-      await loadFiles();
-      // Tampilkan success modal lalu redirect ke dashboard
-      setUploadSuccess({ filename: file.name, rows: res.rows });
-      setTimeout(() => {
-        setUploadSuccess(null);
-        setCurrentView("dashboard");
-      }, 2500);
-    } catch (error) { setStatus(`Gagal mengunggah file: ${error.message}`); }
-    finally { setIsUploading(false); }
+    if (isPriceUpload) { await handleUploadArima(e); } else { await handleUploadFundamental(e); }
   };
 
   useEffect(() => { loadLatest(); loadHistory(); if (role === "admin") loadFiles(); }, [role]);
-  useEffect(() => { if (role === "visitor" && currentView === "admin") setCurrentView("dashboard"); }, [role, currentView]);
 
   // ── Memoized chart data ──────────────────────────────────────────────────────
   const dashboardChartData = useMemo(() => {
@@ -391,13 +473,12 @@ function App({ currentUser, onLogout, onUpdateUser }) {
 
   const viewTitles = {
     dashboard: "DASHBOARD OVERVIEW", arima: "PREDIKSI ARIMA",
-    fundamental: "ANALISIS FUNDAMENTAL", admin: "ADMIN UPLOAD DATASET", profile: "PENGATURAN PROFIL",
+    fundamental: "ANALISIS FUNDAMENTAL", profile: "PENGATURAN PROFIL",
   };
   const viewSubtitles = {
-    dashboard: "Pemantauan ringkas pergerakan pasar, prediksi model statistik, dan evaluasi fundamental TLKM.",
-    arima: "Detail proyeksi pergerakan harga saham Telkom menggunakan estimasi deret waktu autoregresif.",
-    fundamental: "Evaluasi laporan keuangan, valuasi intrinsik EPS, rasio solvabilitas, dan kesehatan modal.",
-    admin: "Unggah file dataset terbaru untuk memperbarui model prediksi dan analisis laporan keuangan.",
+    dashboard: "Perbandingan hasil prediksi ARIMA dan analisis fundamental TLKM beserta rekomendasi.",
+    arima: "Upload data harga dan lihat proyeksi pergerakan harga saham Telkom menggunakan model ARIMA.",
+    fundamental: "Upload laporan keuangan dan lihat evaluasi fundamental, valuasi intrinsik, dan rasio keuangan.",
     profile: "Perbarui informasi akun Anda seperti username, email, dan password.",
   };
 
@@ -415,7 +496,6 @@ function App({ currentUser, onLogout, onUpdateUser }) {
               { view: "dashboard", icon: <TrendingUp size={16} />, label: "Dashboard" },
               { view: "arima", icon: <Activity size={16} />, label: "Prediksi ARIMA" },
               { view: "fundamental", icon: <BarChart3 size={16} />, label: "Fundamental" },
-              ...(role === "admin" ? [{ view: "admin", icon: <Database size={16} />, label: "Upload Data" }] : []),
             ].map(({ view, icon, label }) => (
               <li key={view}>
                 <button className={`nav-item-btn ${currentView === view ? "active" : ""}`} onClick={() => setCurrentView(view)}>
@@ -497,7 +577,9 @@ function App({ currentUser, onLogout, onUpdateUser }) {
               <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
                 {uploadSuccess.rows} baris data berhasil dianalisis
               </p>
-              <p style={{ fontSize: 12, color: "#94a3b8" }}>Mengarahkan ke Dashboard...</p>
+              <p style={{ fontSize: 12, color: "#94a3b8" }}>
+                {uploadSuccess.type === "arima" ? "Hasil analisis ARIMA siap dilihat di bawah." : "Hasil analisis fundamental siap dilihat di bawah."}
+              </p>
             </div>
           </div>
         )}
@@ -509,7 +591,34 @@ function App({ currentUser, onLogout, onUpdateUser }) {
               <div className="card" style={{ textAlign: "center", padding: "40px 24px", color: "var(--text-muted)" }}>
                 <Database size={40} style={{ margin: "0 auto 16px", opacity: 0.4 }} />
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "var(--text-main)" }}>Belum Ada Data Analisis</h3>
-                <p style={{ fontSize: 14 }}>Silakan login sebagai <strong>Admin</strong>, lalu upload file CSV melalui menu <strong>Admin Upload</strong>.</p>
+                <p style={{ fontSize: 14 }}>
+                  Mulai dari halaman <strong>Prediksi ARIMA</strong> untuk upload data harga saham,
+                  lalu ke <strong>Fundamental</strong> untuk upload laporan keuangan.
+                </p>
+              </div>
+            )}
+            {/* Partial state — hanya ARIMA */}
+            {result && result.arima && !result.fundamental && (
+              <div className="card" style={{ padding: "16px 20px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
+                <Info size={18} color="#d97706" style={{ flexShrink: 0 }} />
+                <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>
+                  Data ARIMA sudah tersedia. Upload laporan keuangan di halaman <strong>Fundamental</strong> untuk melihat perbandingan lengkap dan rekomendasi gabungan.
+                </p>
+                <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: 12, flexShrink: 0 }} onClick={() => setCurrentView("fundamental")}>
+                  Ke Fundamental
+                </button>
+              </div>
+            )}
+            {/* Partial state — hanya Fundamental */}
+            {result && result.fundamental && !result.arima && (
+              <div className="card" style={{ padding: "16px 20px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
+                <Info size={18} color="#d97706" style={{ flexShrink: 0 }} />
+                <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>
+                  Data Fundamental sudah tersedia. Upload data harga saham di halaman <strong>Prediksi ARIMA</strong> untuk melihat perbandingan lengkap dan rekomendasi gabungan.
+                </p>
+                <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: 12, flexShrink: 0 }} onClick={() => setCurrentView("arima")}>
+                  Ke Prediksi ARIMA
+                </button>
               </div>
             )}
             {result && (<>
@@ -734,6 +843,61 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                 </div>
               </div>
             </div>
+
+            {/* ── Panel Upload ARIMA (admin only) ── */}
+            {role === "admin" && (
+              <div className="card">
+                <div className="card-header-flex">
+                  <div className="card-title-section">
+                    <h3>Upload Data Harga Saham</h3>
+                    <p>Upload CSV harga historis untuk menjalankan analisis ARIMA</p>
+                  </div>
+                  {result?.arima && (
+                    <span className="status-indicator success" style={{ fontSize: 11 }}>Data aktif: {result.arima.preprocessing?.end_date || "-"}</span>
+                  )}
+                </div>
+                <form onSubmit={handleUploadArima} className="upload-panel">
+                  <div className="dropzone" style={{ padding: "24px 20px" }}>
+                    <FileUp className="dropzone-icon" size={30} />
+                    <div className="dropzone-text">
+                      {priceFile ? `Terpilih: ${priceFile.name}` : "Klik atau seret file CSV Harga Saham di sini"}
+                    </div>
+                    <div className="dropzone-sub">Kolom yang dibutuhkan: date, close · Format .CSV (Maks. 25MB)</div>
+                    <input id="csv-price-picker" type="file" accept=".csv" className="hidden-file-input"
+                      onChange={(e) => { const f = e.target.files?.[0]; setPriceFile(f || null); }} />
+                    <button type="button" className="file-select-btn" onClick={() => document.getElementById("csv-price-picker").click()}>Pilih File</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+                    <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={isUploading || isAnalyzing || !priceFile}>
+                      {isUploading ? "Mengunggah..." : isAnalyzing ? "Menganalisis..." : "Unggah dan Analisis"}
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={() => { setPriceFile(null); setUploadedPreview(null); const i = document.getElementById("csv-price-picker"); if(i) i.value=""; }}>Reset</button>
+                  </div>
+                </form>
+                {uploadedPreview && currentView === "arima" && (
+                  <div style={{ marginTop: 16, borderTop: "1px solid var(--border-color)", paddingTop: 14 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Pratinjau: {uploadedPreview.filename} — {uploadedPreview.rowsTotal} baris</p>
+                    <div className="table-responsive" style={{ maxHeight: 200, overflow: "auto" }}>
+                      <table className="custom-table" style={{ fontSize: 12 }}>
+                        <thead><tr>{uploadedPreview.columns.map((c, i) => <th key={i}>{c}</th>)}</tr></thead>
+                        <tbody>{uploadedPreview.data.slice(0, 5).map((row, ri) => (
+                          <tr key={ri}>{uploadedPreview.columns.map((c, ci) => <td key={ci}>{row[c] ?? "-"}</td>)}</tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Empty state jika belum ada data ARIMA */}
+            {!result?.arima && (
+              <div className="card" style={{ textAlign: "center", padding: "40px 24px", color: "var(--text-muted)" }}>
+                <Activity size={40} style={{ margin: "0 auto 16px", opacity: 0.4 }} />
+                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "var(--text-main)" }}>Belum Ada Data ARIMA</h3>
+                <p style={{ fontSize: 14 }}>{role === "admin" ? "Upload file CSV harga saham di panel atas untuk memulai analisis." : "Admin belum mengunggah data harga saham."}</p>
+              </div>
+            )}
 
             {/* Date Picker ARIMA */}
             <div className="card" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", color: "white" }}>
@@ -988,11 +1152,58 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                 </span>
               )}
             </div>
+
+            {/* ── Panel Upload Fundamental (admin only) ── */}
+            {role === "admin" && (
+              <div className="card">
+                <div className="card-header-flex">
+                  <div className="card-title-section">
+                    <h3>Upload Laporan Keuangan</h3>
+                    <p>Upload CSV laporan keuangan tahunan untuk menjalankan analisis fundamental</p>
+                  </div>
+                  {result?.fundamental && (
+                    <span className="status-indicator success" style={{ fontSize: 11 }}>Data aktif: periode {result.fundamental.latest_year || "-"}</span>
+                  )}
+                </div>
+                <form onSubmit={handleUploadFundamental} className="upload-panel">
+                  <div className="dropzone" style={{ padding: "24px 20px" }}>
+                    <FileUp className="dropzone-icon" size={30} />
+                    <div className="dropzone-text">
+                      {financialFile ? `Terpilih: ${financialFile.name}` : "Klik atau seret file CSV Laporan Keuangan di sini"}
+                    </div>
+                    <div className="dropzone-sub">Kolom: year, net_income, total_equity, total_assets, total_liabilities, shares_outstanding, market_price · Format .CSV (Maks. 25MB)</div>
+                    <input id="csv-financial-picker" type="file" accept=".csv" className="hidden-file-input"
+                      onChange={(e) => { const f = e.target.files?.[0]; setFinancialFile(f || null); }} />
+                    <button type="button" className="file-select-btn" onClick={() => document.getElementById("csv-financial-picker").click()}>Pilih File</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+                    <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={isUploading || isAnalyzing || !financialFile}>
+                      {isUploading ? "Mengunggah..." : isAnalyzing ? "Menganalisis..." : "Unggah dan Analisis"}
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={() => { setFinancialFile(null); setUploadedPreview(null); const i = document.getElementById("csv-financial-picker"); if(i) i.value=""; }}>Reset</button>
+                  </div>
+                </form>
+                {uploadedPreview && currentView === "fundamental" && (
+                  <div style={{ marginTop: 16, borderTop: "1px solid var(--border-color)", paddingTop: 14 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Pratinjau: {uploadedPreview.filename} — {uploadedPreview.rowsTotal} baris</p>
+                    <div className="table-responsive" style={{ maxHeight: 200, overflow: "auto" }}>
+                      <table className="custom-table" style={{ fontSize: 12 }}>
+                        <thead><tr>{uploadedPreview.columns.map((c, i) => <th key={i}>{c}</th>)}</tr></thead>
+                        <tbody>{uploadedPreview.data.slice(0, 5).map((row, ri) => (
+                          <tr key={ri}>{uploadedPreview.columns.map((c, ci) => <td key={ci}>{row[c] ?? "-"}</td>)}</tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {!latestFund && (
               <div className="card" style={{ textAlign: "center", padding: "40px 24px", color: "var(--text-muted)" }}>
                 <BarChart3 size={40} style={{ margin: "0 auto 16px", opacity: 0.4 }} />
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "var(--text-main)" }}>Belum Ada Data Fundamental</h3>
-                <p style={{ fontSize: 14 }}>Upload file CSV laporan keuangan melalui menu <strong>Admin Upload</strong>.</p>
+                <p style={{ fontSize: 14 }}>{role === "admin" ? "Upload file CSV laporan keuangan di panel atas untuk memulai analisis." : "Admin belum mengunggah data laporan keuangan."}</p>
               </div>
             )}
             {latestFund && (<>
@@ -1158,87 +1369,8 @@ function App({ currentUser, onLogout, onUpdateUser }) {
           </>
         )}
 
-        {/* ── VIEW: ADMIN UPLOAD ── */}
-        {currentView === "admin" && role === "admin" && (
-          <div className="card" style={{ maxWidth: 800, margin: "0 auto", width: "100%" }}>
-            <div className="card-header-flex">
-              <div className="card-title-section"><h3>Pembaruan Dataset</h3><p>Gunakan panel di bawah untuk mengunggah berkas harga historis atau laporan keuangan.</p></div>
-            </div>
-            <form onSubmit={handleUpload} className="upload-panel">
-              <div className="form-group">
-                <label style={{ fontSize: 13, fontWeight: 700 }}>Pilih Kategori Data</label>
-                <select className="form-input" value={uploadCategory}
-                  onChange={(e) => { setUploadCategory(e.target.value); setPriceFile(null); setFinancialFile(null); const input = document.getElementById("csv-file-picker"); if (input) input.value = ""; }}
-                  style={{ width: "100%" }}>
-                  <option value="price_historical">Harga Saham Historis (Daily CSV)</option>
-                  <option value="financial_annual">Laporan Keuangan Historis (Annual CSV)</option>
-                </select>
-              </div>
-              <div className="dropzone">
-                <FileUp className="dropzone-icon" size={36} />
-                <div className="dropzone-text">
-                  {uploadCategory === "price_historical"
-                    ? (priceFile ? `Terpilih: ${priceFile.name}` : "Klik atau seret file CSV Harga Saham di sini")
-                    : (financialFile ? `Terpilih: ${financialFile.name}` : "Klik atau seret file CSV Laporan Keuangan di sini")}
-                </div>
-                <div className="dropzone-sub">Mendukung format .CSV (Maks. 25MB)</div>
-                <input id="csv-file-picker" type="file" accept=".csv" className="hidden-file-input"
-                  onChange={(e) => { const file = e.target.files?.[0]; if (uploadCategory === "price_historical") setPriceFile(file || null); else setFinancialFile(file || null); }} />
-                <button type="button" className="file-select-btn" onClick={() => document.getElementById("csv-file-picker").click()}>Pilih File dari Komputer</button>
-              </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-                <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={isUploading || isAnalyzing}>
-                  {isUploading ? "Mengunggah..." : isAnalyzing ? "Menganalisis..." : "Unggah dan Proses Data"}
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => { setPriceFile(null); setFinancialFile(null); setUploadedPreview(null); }}>Reset Form</button>
-              </div>
-            </form>
-
-            {uploadedPreview && (
-              <div style={{ marginTop: 24, borderTop: "1px solid var(--border-color)", paddingTop: 16 }}>
-                <h4 style={{ marginBottom: 12, fontWeight: 700 }}>Pratinjau Data: {uploadedPreview.filename}</h4>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>Menampilkan {uploadedPreview.data.length} dari {uploadedPreview.rowsTotal} baris data.</p>
-                <div className="table-responsive" style={{ maxHeight: 400, overflow: "auto" }}>
-                  <table className="custom-table" style={{ fontSize: 13 }}>
-                    <thead><tr>{uploadedPreview.columns.map((col, idx) => <th key={idx}>{col}</th>)}</tr></thead>
-                    <tbody>{uploadedPreview.data.map((row, rowIdx) => (
-                      <tr key={rowIdx}>{uploadedPreview.columns.map((col, colIdx) => <td key={colIdx}>{row[col] !== null && row[col] !== undefined ? String(row[col]) : "-"}</td>)}</tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 24, borderTop: "1px solid var(--border-color)", paddingTop: 16 }}>
-              <h4 style={{ marginBottom: 12, fontWeight: 700 }}>Manajemen File Dataset</h4>
-              {filesList && filesList.length > 0 ? (
-                <div className="table-responsive" style={{ maxHeight: 300, overflow: "auto" }}>
-                  <table className="custom-table" style={{ fontSize: 13 }}>
-                    <thead><tr><th>Nama File</th><th>Ukuran</th><th>Tanggal Upload</th><th style={{ textAlign: "center" }}>Aksi</th></tr></thead>
-                    <tbody>{filesList.map((file, idx) => (
-                      <tr key={idx}>
-                        <td style={{ fontWeight: 600 }}>{file.filename}</td>
-                        <td>{(file.size_bytes / 1024).toFixed(1)} KB</td>
-                        <td>{new Date(file.created_at * 1000).toLocaleString("id-ID")}</td>
-                        <td style={{ textAlign: "center" }}>
-                          <button className="btn-secondary" style={{ padding: "4px 8px", fontSize: 11, color: "var(--accent-red)", borderColor: "var(--accent-red)", background: "transparent" }} onClick={() => handleDeleteFile(file.filename)}>Hapus</button>
-                        </td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              ) : <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>Belum ada file yang diunggah.</p>}
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-color)", paddingTop: 16, marginTop: 24 }}>
-              <div className="system-status-indicator"><span className="status-dot" /><span>Sistem Siap</span></div>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Update terakhir: {result?.arima?.preprocessing?.end_date || "-"}</span>
-            </div>
-          </div>
-        )}
-
         {/* ── Riwayat Analisis (Footer) ── */}
-        {currentView !== "admin" && (
+        {currentView !== "profile" && (
           <div className="card">
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Riwayat Analisis Terbaru</h3>
             <div className="table-responsive">

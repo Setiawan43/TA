@@ -133,17 +133,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// ── Helper: navigasi ke halaman Admin Upload ──────────────────────────────────
+// ── Helper: navigasi ke halaman Prediksi ARIMA (upload ada di sini) ──────────
 async function navigateToAdminUpload() {
   // Tunggu komponen selesai mount dan useEffect selesai
   await waitFor(() => {
     expect(api.getLatestAnalysis).toHaveBeenCalled();
   });
 
-  // Klik tombol "Admin Upload" di sidebar
-  const adminBtn = screen.getByRole("button", { name: /upload data/i });
+  // Klik tombol "Prediksi ARIMA" di sidebar — upload form ada di sana
+  const arimaBtn = screen.getByRole("button", { name: /prediksi arima/i });
   await act(async () => {
-    fireEvent.click(adminBtn);
+    fireEvent.click(arimaBtn);
   });
 }
 
@@ -225,19 +225,19 @@ describe("Bug Condition Exploration — Upload CSV Sukses Tidak Memicu Analisis 
    */
   it("Test 2 — Financial Upload: postJson('/analyze/compare') harus dipanggil setelah upload financial CSV sukses", async () => {
     await renderAsAdmin();
-    await navigateToAdminUpload();
 
-    // Ganti uploadCategory ke "financial"
-    const categorySelect = screen.queryByRole("combobox") ??
-      document.querySelector("select");
+    // Tunggu mount selesai
+    await waitFor(() => {
+      expect(api.getLatestAnalysis).toHaveBeenCalled();
+    });
 
-    if (categorySelect) {
-      await act(async () => {
-        fireEvent.change(categorySelect, { target: { value: "financial" } });
-      });
-    }
+    // Navigasi ke halaman Fundamental (upload financial ada di sana)
+    const fundamentalBtn = screen.getByRole("button", { name: /fundamental/i });
+    await act(async () => {
+      fireEvent.click(fundamentalBtn);
+    });
 
-    // Set file financial CSV
+    // Set file financial CSV — input file ada di halaman fundamental
     const fileInput = document.querySelector('input[type="file"]');
     const csvFile = createFakeCsvFile("financial_test.csv");
 
@@ -257,7 +257,6 @@ describe("Bug Condition Exploration — Upload CSV Sukses Tidak Memicu Analisis 
     });
 
     // ★ ASSERTION UTAMA: postJson("/analyze/compare") HARUS dipanggil
-    // Pada kode UNFIXED ini akan GAGAL — membuktikan bug ada
     await waitFor(() => {
       expect(api.postJson).toHaveBeenCalledWith(
         "/analyze/compare",
@@ -397,9 +396,8 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
         expect(api.getLatestAnalysis).toHaveBeenCalled();
       });
 
-      // Navigasi ke Admin Upload — ambil semua tombol dengan nama itu,
-      // gunakan yang pertama (dalam satu render hanya ada satu)
-      const adminBtns = screen.getAllByRole("button", { name: /upload data/i });
+      // Navigasi ke Prediksi ARIMA — upload form ada di sana
+      const adminBtns = screen.getAllByRole("button", { name: /prediksi arima/i });
       await act(async () => {
         fireEvent.click(adminBtns[0]);
       });
@@ -563,7 +561,7 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
       expect(api.getLatestAnalysis).toHaveBeenCalledTimes(1);
     });
 
-    // ★ ASSERTION 1: Tombol "Admin Upload" tidak ada di sidebar untuk visitor
+    // ★ ASSERTION 1: Tombol "Upload Data" tidak ada di sidebar untuk visitor (memang dihapus)
     const adminUploadBtn = screen.queryByRole("button", { name: /upload data/i });
     expect(adminUploadBtn).toBeNull();
 
@@ -657,8 +655,8 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
       expect(api.getLatestAnalysis).toHaveBeenCalled();
     });
 
-    // Navigasi ke Admin Upload
-    const adminBtn = screen.getByRole("button", { name: /upload data/i });
+    // Navigasi ke Prediksi ARIMA
+    const adminBtn = screen.getByRole("button", { name: /prediksi arima/i });
     await act(async () => {
       fireEvent.click(adminBtn);
     });

@@ -13,7 +13,7 @@ from .schemas import (
     UserRegister, UserLogin, UserResponse, UserProfileUpdate
 )
 from .services.arima_service import evaluate_scenarios, run_arima
-from .services.comparison_service import build_recommendation
+from .services.comparison_service import build_recommendation, build_arima_only_recommendation, build_fundamental_only_recommendation
 from .services.fundamental_service import analyze_fundamental as run_fundamental
 from .services.preprocessing_service import load_csv, save_upload, list_files as get_uploaded_files, delete_file as remove_uploaded_file
 
@@ -159,6 +159,8 @@ def analyze_arima(req: ArimaRequest):
     result = run_arima(df, req.horizon, req.train_ratio, req.p, req.d, req.q)
     result["scenarios"] = evaluate_scenarios(df, horizon=req.horizon)
     result["preprocessing"]["price_csv_path"] = req.price_csv_path
+    # Generate partial recommendation (ARIMA only)
+    result["recommendation"] = build_arima_only_recommendation(result)
     save_history("ARIMA", result, price_file=req.price_csv_path)
     return result
 
@@ -168,6 +170,8 @@ def analyze_fundamental(req: FundamentalRequest):
     df = load_csv(req.financial_csv_path)
     result = run_fundamental(df, req.per_wajar)
     result["financial_csv_path"] = req.financial_csv_path
+    # Generate partial recommendation (Fundamental only)
+    result["recommendation"] = build_fundamental_only_recommendation(result)
     save_history("FUNDAMENTAL", result, financial_file=req.financial_csv_path)
     return result
 
