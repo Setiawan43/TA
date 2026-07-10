@@ -130,11 +130,37 @@ def analyze_fundamental(df: pd.DataFrame, per_wajar: float = 8.0) -> Dict[str, A
             "valuation_gap": _safe(row["valuation_gap"]),
         })
 
+    # ── Health Score (0–100) ─────────────────────────────────────────────────
+    # Composite score dari 4 indikator utama, masing-masing 25 poin:
+    #   ROE ≥ 15%      → 25 pts
+    #   DER ≤ 1.5      → 25 pts
+    #   Status wajar/undervalued → 25 pts
+    #   ROA ≥ 5%       → 25 pts
+    health_score = 0
+    latest_roe = _safe(latest["roe"])
+    latest_der = _safe(latest["der"])
+    latest_roa = _safe(latest["roa"])
+    if latest_roe >= 0.15:
+        health_score += 25
+    elif latest_roe >= 0.08:
+        health_score += 13
+    if latest_der <= 1.5:
+        health_score += 25
+    elif latest_der <= 2.5:
+        health_score += 13
+    if status in ("undervalued", "fair valued"):
+        health_score += 25
+    if latest_roa >= 0.05:
+        health_score += 25
+    elif latest_roa >= 0.02:
+        health_score += 13
+
     return {
         "per_wajar": float(per_wajar),
         "latest_year": str(latest["year"]),
         "status": status,
         "latest": rows[-1],
+        "health_score": health_score,
         "financial_csv_path": None,   # filled by caller if needed
         "rows": rows,
         "interpretation": [

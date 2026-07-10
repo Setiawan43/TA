@@ -22,12 +22,14 @@ function Root() {
   const handleLogin = (user) => {
     localStorage.setItem("currentUser", JSON.stringify(user));
     localStorage.setItem("role", user.role);
+    localStorage.setItem("userId", String(user.id));
     setCurrentUser(user);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     localStorage.removeItem("role");
+    localStorage.removeItem("userId");
     setCurrentUser(null);
     setAuthView("login");
   };

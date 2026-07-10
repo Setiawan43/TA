@@ -65,9 +65,14 @@ def list_files() -> list[Dict[str, Any]]:
 
 
 def delete_file(filename: str) -> bool:
-    if not filename.endswith(".csv") or "/" in filename or "\\" in filename:
+    # Sanitize: strip any directory component to prevent path traversal
+    safe_name = os.path.basename(filename)
+    if not safe_name or not safe_name.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Nama file tidak valid.")
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    file_path = os.path.join(UPLOAD_DIR, safe_name)
+    # Extra guard: ensure resolved path is within UPLOAD_DIR
+    if not os.path.abspath(file_path).startswith(os.path.abspath(UPLOAD_DIR)):
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
     if os.path.exists(file_path):
         try:
             os.remove(file_path)

@@ -5,7 +5,8 @@ import {
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend
+  CartesianGrid, Tooltip as RechartsTooltip, Legend,
+  BarChart, Bar, Cell
 } from "recharts";
 import { getHistory, getLatestAnalysis, postJson, uploadCsv, getFiles, deleteFile } from "../services/api";
 import MetricCard from "./MetricCard";
@@ -19,14 +20,55 @@ const formatRupiah = (val) => {
   }).format(val);
 };
 
-// ── App Component ─────────────────────────────────────────────────────────────
+// ── Tooltip Component ─────────────────────────────────────────────────────────
+function Tooltip({ text, children }) {
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
+          transform: "translateX(-50%)", background: "#1e293b",
+          color: "#e2e8f0", fontSize: 11, fontWeight: 500, lineHeight: 1.5,
+          padding: "7px 10px", borderRadius: 7, whiteSpace: "nowrap",
+          maxWidth: 220, whiteSpace: "normal", textAlign: "center",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 999,
+          pointerEvents: "none",
+        }}>
+          {text}
+          <span style={{
+            position: "absolute", top: "100%", left: "50%",
+            transform: "translateX(-50%)", border: "5px solid transparent",
+            borderTopColor: "#1e293b",
+          }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ── InfoIcon ──────────────────────────────────────────────────────────────────
+function InfoIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      style={{ marginLeft: 4, opacity: 0.5, cursor: "help", flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  );
+}
+
 function App({ currentUser, onLogout, onUpdateUser }) {
   const role = currentUser?.role || "visitor";
   const [currentView, setCurrentView] = useState("dashboard");
   const [status, setStatus] = useState("");
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
-  const [params, setParams] = useState({ horizon: 14, train_ratio: 0.8, per_wajar: 8.0, p: "", d: "", q: "", target_date: "" });
+  const [params, setParams] = useState({ horizon: 30, train_ratio: 0.8, per_wajar: 8.0, p: "", d: "", q: "" });
   const [dashboardTargetDate, setDashboardTargetDate] = useState("");
   const [dashboardForecastResult, setDashboardForecastResult] = useState(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(false);
@@ -42,6 +84,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
   const [pendingPricePath, setPendingPricePath] = useState(null);
   const [pendingFinancialPath, setPendingFinancialPath] = useState(null);
   const [filesList, setFilesList] = useState([]);
+  const [uploadSuccess, setUploadSuccess] = useState(null); // { filename, rows }
 
   const loadFiles = async () => {
     try { setFilesList(await getFiles()); } catch (error) { console.error(error); }
@@ -66,7 +109,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
       if (data?.fundamental?.financial_csv_path) setPendingFinancialPath(data.fundamental.financial_csv_path);
       if (data?.arima?.model) {
         setParams({
-          horizon: data.arima.model.horizon || 14,
+          horizon: data.arima.model.horizon || 30,
           train_ratio: data.arima.model.train_ratio || 0.8,
           per_wajar: data.fundamental?.per_wajar || 8.0,
           p: data.arima.model.order?.[0] ?? "",
@@ -85,22 +128,45 @@ function App({ currentUser, onLogout, onUpdateUser }) {
     try { setHistory(await getHistory()); } catch (error) { console.error(error); }
   };
 
+  const handleAnalyzeCompare = async (pricePath, financialPath) => {
+    // Run combined analysis — updates both arima, fundamental, AND recommendation
+    const currentPricePath = pricePath || pendingPricePath || result?.arima?.preprocessing?.price_csv_path;
+    const currentFinancialPath = financialPath || pendingFinancialPath || result?.fundamental?.financial_csv_path;
+    if (!currentPricePath || !currentFinancialPath) {
+      // Fall back to individual analysis if only one file is available
+      if (pricePath || pendingPricePath || result?.arima?.preprocessing?.price_csv_path) {
+        await handleAnalyzeArima(currentPricePath);
+      }
+      if (financialPath || pendingFinancialPath || result?.fundamental?.financial_csv_path) {
+        await handleAnalyzeFundamental(currentFinancialPath);
+      }
+      return;
+    }
+    try {
+      setIsAnalyzing(true);
+      setStatus("Menjalankan analisis lengkap (ARIMA + Fundamental)...");
+      const compareData = await postJson("/analyze/compare", {
+        price_csv_path: currentPricePath,
+        financial_csv_path: currentFinancialPath,
+        horizon: Number(params.horizon),
+        train_ratio: Number(params.train_ratio),
+        per_wajar: Number(params.per_wajar),
+        p: params.p === "" ? null : Number(params.p),
+        d: params.d === "" ? null : Number(params.d),
+        q: params.q === "" ? null : Number(params.q),
+      });
+      setResult(compareData);
+      setStatus("Analisis lengkap selesai.");
+      await loadHistory();
+    } catch (error) { setStatus(`Analisis gagal: ${error.message}`); }
+    finally { setIsAnalyzing(false); }
+  };
+
   const handleAnalyzeArima = async (pricePath) => {
     try {
       setIsAnalyzing(true);
       setStatus("Menjalankan analisis ARIMA...");
-      let computedHorizon = Number(params.horizon);
-      if (params.target_date && result?.arima?.actual_tail?.length > 0) {
-        const lastActual = new Date(result.arima.actual_tail[result.arima.actual_tail.length - 1].date);
-        const target = new Date(params.target_date);
-        if (target > lastActual) {
-          let count = 0;
-          let cur = new Date(lastActual);
-          cur.setDate(cur.getDate() + 1);
-          while (cur <= target) { if (cur.getDay() !== 0 && cur.getDay() !== 6) count++; cur.setDate(cur.getDate() + 1); }
-          computedHorizon = Math.max(1, Math.min(90, count));
-        }
-      }
+      const computedHorizon = Number(params.horizon);
       const arimaData = await postJson("/analyze/arima", {
         price_csv_path: pricePath, horizon: computedHorizon,
         train_ratio: Number(params.train_ratio),
@@ -172,7 +238,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
     let cur = new Date(lastActual);
     cur.setDate(cur.getDate() + 1);
     while (cur <= target) { if (cur.getDay() !== 0 && cur.getDay() !== 6) count++; cur.setDate(cur.getDate() + 1); }
-    const computedHorizon = Math.max(1, Math.min(365, count));
+    const computedHorizon = Math.max(1, Math.min(90, count));
     try {
       setIsArimaLoading(true);
       setStatus(`Menghitung proyeksi hingga ${arimaTargetDate} (${computedHorizon} hari kerja)...`);
@@ -208,9 +274,17 @@ function App({ currentUser, onLogout, onUpdateUser }) {
       }
       if (isPriceUpload) setPendingPricePath(newFilePath); else setPendingFinancialPath(newFilePath);
       if (isPriceUpload) setPriceFile(null); else setFinancialFile(null);
-      if (isPriceUpload) await handleAnalyzeArima(newFilePath);
-      else await handleAnalyzeFundamental(newFilePath);
+      // Run combined compare analysis so recommendation is always populated
+      const newPricePath = isPriceUpload ? newFilePath : (pendingPricePath || result?.arima?.preprocessing?.price_csv_path);
+      const newFinancialPath = isPriceUpload ? (pendingFinancialPath || result?.fundamental?.financial_csv_path) : newFilePath;
+      await handleAnalyzeCompare(newPricePath, newFinancialPath);
       await loadFiles();
+      // Tampilkan success modal lalu redirect ke dashboard
+      setUploadSuccess({ filename: file.name, rows: res.rows });
+      setTimeout(() => {
+        setUploadSuccess(null);
+        setCurrentView("dashboard");
+      }, 2500);
     } catch (error) { setStatus(`Gagal mengunggah file: ${error.message}`); }
     finally { setIsUploading(false); }
   };
@@ -222,22 +296,35 @@ function App({ currentUser, onLogout, onUpdateUser }) {
   const dashboardChartData = useMemo(() => {
     const arima = dashboardForecastResult || result?.arima;
     if (!arima?.actual_tail) return [];
-    const historical = arima.actual_tail.slice(-25).map((x) => ({ date: x.date, actual: x.value, forecast: null }));
+    const historical = arima.actual_tail.slice(-25).map((x) => ({ date: x.date, actual: x.value, forecast: null, lower: null, upper: null }));
     const lastHist = arima.actual_tail[arima.actual_tail.length - 1];
-    const forecastData = (arima.forecast || []).map((x) => ({ date: x.date, actual: null, forecast: x.value }));
+    const forecastData = (arima.forecast || []).map((x) => ({ date: x.date, actual: null, forecast: x.value, lower: x.lower ?? null, upper: x.upper ?? null }));
     if (lastHist && forecastData.length > 0) { forecastData[0].actual = lastHist.value; forecastData[0].forecast = lastHist.value; }
     return [...historical, ...forecastData];
   }, [dashboardForecastResult, result]);
+
+  // Y-axis domain untuk dashboard chart — zoom ke area proyeksi saat ada forecast result
+  const dashboardYDomain = useMemo(() => {
+    if (!dashboardForecastResult) return ["auto", "auto"];
+    const arima = dashboardForecastResult;
+    const allValues = [
+      ...(arima.actual_tail?.slice(-10).map(x => x.value) || []),
+      ...(arima.forecast?.map(x => x.value) || []),
+      ...(arima.forecast?.map(x => x.lower).filter(Boolean) || []),
+      ...(arima.forecast?.map(x => x.upper).filter(Boolean) || []),
+    ].filter(v => v != null);
+    if (!allValues.length) return ["auto", "auto"];
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    const pad = (max - min) * 0.15;
+    return [Math.floor(min - pad), Math.ceil(max + pad)];
+  }, [dashboardForecastResult]);
 
   const dashboardForecastPrice = useMemo(() => {
     if (!dashboardForecastResult?.forecast?.length) return null;
     const fc = dashboardForecastResult.forecast;
     return fc[fc.length - 1];
   }, [dashboardForecastResult]);
-
-  const activeForecastLabel = dashboardForecastResult
-    ? `Proyeksi hingga ${dashboardForecastPrice?.date || ""}`
-    : "Historis vs Proyeksi 14 Hari ke Depan";
 
   const arimaChartData = useMemo(() => {
     const arima = arimaForecastResult || result?.arima;
@@ -248,6 +335,34 @@ function App({ currentUser, onLogout, onUpdateUser }) {
     if (lastHist && forecast.length > 0) { forecast[0].actual = lastHist.value; forecast[0].forecast = lastHist.value; }
     return [...historical, ...forecast];
   }, [arimaForecastResult, result]);
+
+  // Chart data hanya untuk titik proyeksi — dengan CI band, skala ketat
+  const arimaForecastOnlyData = useMemo(() => {
+    const arima = arimaForecastResult || result?.arima;
+    if (!arima?.forecast?.length) return [];
+    const lastActual = arima.actual_tail?.[arima.actual_tail.length - 1];
+    const points = arima.forecast.map((x) => ({
+      date: x.date,
+      forecast: x.value,
+      lower: x.lower ?? null,
+      upper: x.upper ?? null,
+    }));
+    // Prepend last actual point agar chart tidak mulai dari tengah
+    if (lastActual) {
+      return [{ date: lastActual.date, forecast: lastActual.value, lower: lastActual.value, upper: lastActual.value }, ...points];
+    }
+    return points;
+  }, [arimaForecastResult, result]);
+
+  const arimaForecastYDomain = useMemo(() => {
+    if (!arimaForecastOnlyData.length) return ["auto", "auto"];
+    const vals = arimaForecastOnlyData.flatMap(d => [d.forecast, d.lower, d.upper]).filter(v => v != null);
+    if (!vals.length) return ["auto", "auto"];
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const pad = Math.max((max - min) * 0.2, 50); // minimum padding 50
+    return [Math.floor(min - pad), Math.ceil(max + pad)];
+  }, [arimaForecastOnlyData]);
 
   const arimaModelName = useMemo(() => {
     const order = (arimaForecastResult || result?.arima)?.model?.order;
@@ -297,10 +412,10 @@ function App({ currentUser, onLogout, onUpdateUser }) {
           </div>
           <ul className="nav-list">
             {[
-              { view: "dashboard", icon: <TrendingUp size={18} />, label: "Dashboard" },
-              { view: "arima", icon: <Activity size={18} />, label: "ARIMA Prediction" },
-              { view: "fundamental", icon: <BarChart3 size={18} />, label: "Fundamental" },
-              ...(role === "admin" ? [{ view: "admin", icon: <Database size={18} />, label: "Admin Upload" }] : []),
+              { view: "dashboard", icon: <TrendingUp size={16} />, label: "Dashboard" },
+              { view: "arima", icon: <Activity size={16} />, label: "Prediksi ARIMA" },
+              { view: "fundamental", icon: <BarChart3 size={16} />, label: "Fundamental" },
+              ...(role === "admin" ? [{ view: "admin", icon: <Database size={16} />, label: "Upload Data" }] : []),
             ].map(({ view, icon, label }) => (
               <li key={view}>
                 <button className={`nav-item-btn ${currentView === view ? "active" : ""}`} onClick={() => setCurrentView(view)}>
@@ -321,8 +436,8 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                 <p className="profile-role">{role === "admin" ? "Administrator" : "Pengunjung"}</p>
               </div>
             </div>
-            <button onClick={() => setCurrentView("profile")} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }} title="Pengaturan Profil">
-              <Settings size={18} />
+            <button onClick={() => setCurrentView("profile")} style={{ background: "transparent", border: "none", cursor: "pointer", color: "#475569", display: "flex" }} title="Pengaturan Profil">
+              <Settings size={16} />
             </button>
           </div>
           <button className="role-switcher-btn" onClick={onLogout} style={{ borderColor: "#fee2e2", color: "#b91c1c", background: "#fef2f2", marginTop: 16 }}>
@@ -355,6 +470,38 @@ function App({ currentUser, onLogout, onUpdateUser }) {
           </div>
         )}
 
+        {/* Upload Success Modal */}
+        {uploadSuccess && (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <div style={{
+              background: "#ffffff", borderRadius: 16, padding: "40px 48px",
+              textAlign: "center", maxWidth: 400, width: "90%",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)"
+            }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: "50%",
+                background: "#d1fae5", display: "flex", alignItems: "center",
+                justifyContent: "center", margin: "0 auto 20px"
+              }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Data Berhasil Diproses</h3>
+              <p style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>
+                <strong>{uploadSuccess.filename}</strong>
+              </p>
+              <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
+                {uploadSuccess.rows} baris data berhasil dianalisis
+              </p>
+              <p style={{ fontSize: 12, color: "#94a3b8" }}>Mengarahkan ke Dashboard...</p>
+            </div>
+          </div>
+        )}
+
         {/* ── VIEW: DASHBOARD ── */}
         {currentView === "dashboard" && (
           <>
@@ -366,53 +513,44 @@ function App({ currentUser, onLogout, onUpdateUser }) {
               </div>
             )}
             {result && (<>
-              <div className="card">
-                <div className="card-header-flex">
-                  <div className="card-title-section">
-                    <h3>Market Overview</h3>
-                    <p>Data terakhir dianalisis: {result?.arima?.preprocessing?.end_date || "-"}</p>
-                  </div>
-                  <span className="card-badge-live">LIVE</span>
-                </div>
-                <div className="grid-4">
-                  <MetricCard label="Closing Price" value={result?.arima?.actual_tail?.slice(-1)[0]?.value != null ? formatRupiah(result.arima.actual_tail.slice(-1)[0].value) : "-"} subtext="Harga Penutupan Terakhir" />
-                  <MetricCard label="Volume" value="-" subtext="Tidak tersedia" />
-                  <MetricCard label="Market Cap" value="-" subtext="Tidak tersedia" />
-                  <MetricCard label="Rekomendasi" value={result?.recommendation?.summary ? "Lihat Detail" : "-"} subtext={result?.recommendation?.summary || "Belum ada analisis"} />
-                </div>
+
+              {/* ── Row 1: 4 Metric Cards ── */}
+              <div className="grid-4">
+                <MetricCard
+                  label="Harga Penutupan"
+                  value={result?.arima?.actual_tail?.slice(-1)[0]?.value != null ? formatRupiah(result.arima.actual_tail.slice(-1)[0].value) : "-"}
+                  subtext={`Data per ${result?.arima?.preprocessing?.end_date || "-"}`}
+                />
+                <MetricCard
+                  label="Akurasi Model"
+                  value={accuracy || "-"}
+                  subtext={`Model ${result?.arima?.model?.order ? `ARIMA(${result.arima.model.order.join(",")})` : "-"} · MAPE ${result?.arima?.metrics?.mape != null ? result.arima.metrics.mape.toFixed(1) + "%" : "-"}`}
+                  isTrendUp={result?.arima?.metrics?.mape != null && result.arima.metrics.mape < 10}
+                />
+                <MetricCard
+                  label="Status Valuasi"
+                  value={result?.fundamental?.status ? result.fundamental.status.toUpperCase() : "-"}
+                  subtext={result?.fundamental?.latest?.intrinsic_value != null ? `Intrinsik: ${formatRupiah(result.fundamental.latest.intrinsic_value)}` : "Belum ada data fundamental"}
+                  isTrendUp={result?.fundamental?.status === "undervalued"}
+                />
+                <MetricCard
+                  label="ROE"
+                  value={result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(1)}%` : "-"}
+                  subtext={result?.fundamental?.latest?.per != null ? `P/E Ratio: ${result.fundamental.latest.per.toFixed(1)}x` : "Belum ada data fundamental"}
+                  isTrendUp={result?.fundamental?.latest?.roe != null && result.fundamental.latest.roe > 0.12}
+                />
               </div>
 
-              {/* Date Picker */}
-              <div className="card" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", color: "white" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-                  <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: "white" }}>🔍 Proyeksi Harga pada Tanggal Tertentu</h3>
-                    <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Pilih tanggal untuk melihat estimasi harga saham TLKM</p>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <input type="date" value={dashboardTargetDate} onChange={(e) => { setDashboardTargetDate(e.target.value); setDashboardForecastResult(null); }}
-                      style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.08)", color: "white", fontSize: 14, outline: "none", colorScheme: "dark" }} />
-                    <button onClick={handleDashboardForecast} disabled={isDashboardLoading || !dashboardTargetDate}
-                      style={{ padding: "10px 22px", background: isDashboardLoading || !dashboardTargetDate ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #0047b3, #38bdf8)", color: isDashboardLoading || !dashboardTargetDate ? "#94a3b8" : "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-                      <RefreshCw size={14} className={isDashboardLoading ? "spin" : ""} />
-                      {isDashboardLoading ? "Menghitung..." : "Lanjutkan"}
-                    </button>
-                    {dashboardForecastPrice && (
-                      <div style={{ background: "rgba(56,189,248,0.15)", border: "1.5px solid rgba(56,189,248,0.3)", borderRadius: 10, padding: "8px 16px" }}>
-                        <span style={{ fontSize: 11, color: "#38bdf8", fontWeight: 700, textTransform: "uppercase" }}>Estimasi {dashboardForecastPrice.date}</span>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: "white" }}>{formatRupiah(dashboardForecastPrice.value)}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Chart + ARIMA Panel */}
+              {/* ── Row 2: Chart (kiri) + Panel Proyeksi Terpadu (kanan) ── */}
               <div className="grid-2-1">
+                {/* Chart */}
                 <div className="card">
                   <div className="card-header-flex">
-                    <div className="card-title-section"><h3>Price Trend</h3><p>{activeForecastLabel}</p></div>
-                    <span className="status-indicator success" style={{ fontSize: 10, padding: "2px 8px" }}>LIVE</span>
+                    <div className="card-title-section">
+                      <h3>Price Trend</h3>
+                      <p>{dashboardForecastResult ? `Proyeksi hingga ${dashboardForecastPrice?.date || ""}` : `Historis + Proyeksi ${result?.arima?.model?.horizon || 30} Hari ke Depan`}</p>
+                    </div>
+                    <span className="card-badge-live">LIVE</span>
                   </div>
                   <div className="chart-container-inner">
                     {dashboardChartData.length > 0 ? (
@@ -428,8 +566,8 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                           <XAxis dataKey="date" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} minTickGap={20} />
-                          <YAxis domain={["auto", "auto"]} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
-                          <Tooltip contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }} formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]} />
+                          <YAxis domain={dashboardYDomain} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                          <RechartsTooltip contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }} formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]} />
                           <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
                           <Area type="monotone" dataKey="actual" stroke="#0047b3" strokeWidth={2} fill="url(#dashActual)" name="Harga Aktual" dot={false} connectNulls={false} />
                           <Area type="monotone" dataKey="forecast" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" fill="url(#dashForecast)" name="Proyeksi" dot={false} connectNulls={false} />
@@ -441,58 +579,142 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                   </div>
                 </div>
 
+                {/* Panel Proyeksi Terpadu */}
                 <div className="arima-panel-dark">
                   <div className="arima-dark-header"><h3>ARIMA Prediction</h3></div>
+
+                  {/* Target price — default atau hasil proyeksi */}
                   <div className="arima-dark-target">
-                    <span>{dashboardForecastPrice ? `Target Price (${dashboardForecastPrice.date})` : `Target Price (${result?.arima?.model?.horizon || 14}D)`}</span>
-                    <div className="arima-dark-price">{dashboardForecastPrice ? formatRupiah(dashboardForecastPrice.value) : (targetPrice != null ? formatRupiah(targetPrice) : "-")}</div>
-                    <div className="arima-dark-growth">{dashboardForecastPrice ? `Proyeksi hingga ${dashboardForecastPrice.date}` : `Proyeksi ${result?.arima?.model?.horizon || 14} hari ke depan`}</div>
+                    <span>{dashboardForecastPrice ? `Proyeksi per ${dashboardForecastPrice.date}` : `Proyeksi ${result?.arima?.model?.horizon || 30} Hari ke Depan`}</span>
+                    <div className="arima-dark-price">
+                      {dashboardForecastPrice ? formatRupiah(dashboardForecastPrice.value) : (targetPrice != null ? formatRupiah(targetPrice) : "-")}
+                    </div>
+                    <div className="arima-dark-growth">
+                      {dashboardForecastPrice ? `Estimasi harga pada ${dashboardForecastPrice.date}` : `Hari terakhir: ${result?.arima?.forecast?.slice(-1)[0]?.date || "-"}`}
+                    </div>
                   </div>
+
+                  {/* Stats model */}
                   <div className="arima-dark-stats">
-                    {[
-                      ["Akurasi Model", accuracy || "-"],
-                      ["Lower Bound", (dashboardForecastPrice?.value ?? targetPrice) != null ? formatRupiah((dashboardForecastPrice?.value ?? targetPrice) * 0.98) : "-"],
-                      ["Upper Bound", (dashboardForecastPrice?.value ?? targetPrice) != null ? formatRupiah((dashboardForecastPrice?.value ?? targetPrice) * 1.02) : "-"],
-                    ].map(([label, val]) => (
+                    {(() => {
+                      const activeArima = dashboardForecastResult || result?.arima;
+                      const lastFc = activeArima?.forecast?.slice(-1)[0];
+                      const displayPrice = dashboardForecastPrice?.value ?? targetPrice;
+                      return [
+                        ["Akurasi", accuracy || "-", "Dihitung dari data testing historis (100% - MAPE). Tidak berubah saat ganti tanggal proyeksi."],
+                        ["MAPE", result?.arima?.metrics?.mape != null ? `${result.arima.metrics.mape.toFixed(2)}% (${result.arima.metrics.mape < 10 ? "Sangat Baik" : result.arima.metrics.mape < 20 ? "Baik" : "Cukup"})` : "-", "Mean Absolute Percentage Error — rata-rata persentase kesalahan. < 10% sangat baik, 10–20% baik, > 20% cukup/perlu perhatian."],
+                        ["MAE", result?.arima?.metrics?.mae != null ? formatRupiah(result.arima.metrics.mae) : "-", "Mean Absolute Error — rata-rata selisih nominal antara prediksi dan aktual saat testing."],
+                        ["RMSE", result?.arima?.metrics?.rmse != null ? formatRupiah(result.arima.metrics.rmse) : "-", "Root Mean Square Error — lebih sensitif terhadap error besar dibanding MAE. Semakin kecil semakin baik."],
+                        ["Batas Bawah (95% CI)", lastFc?.lower != null ? formatRupiah(lastFc.lower) : (displayPrice != null ? formatRupiah(displayPrice * 0.98) : "-"), "Confidence Interval 95% — batas bawah rentang harga yang diperkirakan. Makin jauh tanggal target, makin lebar rentang ini."],
+                        ["Batas Atas (95% CI)", lastFc?.upper != null ? formatRupiah(lastFc.upper) : (displayPrice != null ? formatRupiah(displayPrice * 1.02) : "-"), "Confidence Interval 95% — batas atas rentang harga yang diperkirakan. Makin jauh tanggal target, makin lebar rentang ini."],
+                      ];
+                    })().map(([label, val, tip]) => (
                       <div className="arima-dark-stat-row" key={label}>
-                        <span className="arima-dark-stat-label">{label}</span>
+                        <span className="arima-dark-stat-label" style={{ display: "flex", alignItems: "center" }}>
+                          {label}
+                          <Tooltip text={tip}><InfoIcon /></Tooltip>
+                        </span>
                         <span className="arima-dark-stat-val">{val}</span>
                       </div>
                     ))}
                   </div>
-                  <button className="arima-dark-btn" onClick={() => setCurrentView("arima")}>DETAIL PROYEKSI</button>
+
+                  {/* Date picker proyeksi */}
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Proyeksi ke Tanggal</span>
+                    <input
+                      type="date"
+                      value={dashboardTargetDate}
+                      onChange={(e) => { setDashboardTargetDate(e.target.value); setDashboardForecastResult(null); }}
+                      style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "white", fontSize: 13, outline: "none", colorScheme: "dark", width: "100%" }}
+                    />
+                    <button
+                      onClick={handleDashboardForecast}
+                      disabled={isDashboardLoading || !dashboardTargetDate}
+                      className="arima-dark-btn"
+                      style={{ background: isDashboardLoading || !dashboardTargetDate ? "rgba(255,255,255,0.05)" : "rgba(0,71,179,0.7)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                    >
+                      <RefreshCw size={13} className={isDashboardLoading ? "spin" : ""} />
+                      {isDashboardLoading ? "Menghitung..." : "Hitung Proyeksi"}
+                    </button>
+                  </div>
+
+                  <button className="arima-dark-btn" onClick={() => setCurrentView("arima")}>DETAIL PROYEKSI LENGKAP</button>
                 </div>
               </div>
 
-              {/* Financial Status */}
-              <div className="card">
-                <div className="card-header-flex">
-                  <div className="card-title-section"><h3>Financial Status</h3><p>Metrik utama rasio keuangan terbaru PT Telkom Indonesia</p></div>
-                  <button className="btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setCurrentView("fundamental")}>DETAILS</button>
-                </div>
-                <div className="grid-3">
-                  {[
-                    { label: "P/E RATIO", value: result?.fundamental?.latest?.per != null ? `${result.fundamental.latest.per.toFixed(1)}x` : "-", sub: "Above Average", subColor: "var(--accent-red)" },
-                    { label: "DIVIDEND YIELD", value: "-", sub: "Tidak tersedia", subColor: "var(--text-muted)" },
-                    { label: "ROE", value: result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(1)}%` : "-", sub: "Strong", subColor: "var(--accent-green)" },
-                  ].map(({ label, value, sub, subColor }) => (
-                    <div key={label} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
-                      <strong style={{ fontSize: 20 }}>{value}</strong>
-                      <span style={{ fontSize: 12, color: subColor, fontWeight: 600 }}>{sub}</span>
+              {/* ── Row 3: Financial Status + Rekomendasi ── */}
+              <div className="grid-2">
+                {/* Financial Status */}
+                <div className="card">
+                  <div className="card-header-flex">
+                    <div className="card-title-section">
+                      <h3>Financial Status</h3>
+                      <p>Periode {result?.fundamental?.latest_year || "-"} · PT Telkom Indonesia</p>
                     </div>
-                  ))}
+                    <button className="btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setCurrentView("fundamental")}>DETAILS</button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {[
+                      { label: "P/E Ratio", value: result?.fundamental?.latest?.per != null ? `${result.fundamental.latest.per.toFixed(2)}x` : "-" },
+                      { label: "ROE", value: result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(2)}%` : "-" },
+                      { label: "DER", value: result?.fundamental?.latest?.der != null ? `${result.fundamental.latest.der.toFixed(2)}x` : "-" },
+                      { label: "ROA", value: result?.fundamental?.latest?.roa != null ? `${(result.fundamental.latest.roa * 100).toFixed(2)}%` : "-" },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-color)" }}>
+                        <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{label}</span>
+                        <strong style={{ fontSize: 14, color: "var(--text-main)" }}>{value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="health-index-section">
+                    <div className="health-header">
+                      <span className="health-label">Health Index</span>
+                      <span className="health-score">{result?.fundamental?.health_score != null ? `${result.fundamental.health_score} / 100` : "-"}</span>
+                    </div>
+                    <div className="health-bar-bg">
+                      <div className="health-bar-fill" style={{ width: result?.fundamental?.health_score != null ? `${result.fundamental.health_score}%` : "0%" }} />
+                    </div>
+                  </div>
                 </div>
-                <div className="health-index-section">
-                  <div className="health-header">
-                    <span className="health-label">Health Index</span>
-                    <span className="health-score">{result?.fundamental?.health_score != null ? `${result.fundamental.health_score} / 100` : "-"}</span>
+
+                {/* Rekomendasi */}
+                <div className="card">
+                  <div className="card-header-flex">
+                    <div className="card-title-section">
+                      <h3>Rekomendasi Analisis</h3>
+                      <p>Berdasarkan ARIMA + Fundamental</p>
+                    </div>
+                    {result?.fundamental?.status && (
+                      <span className={`status-indicator ${result.fundamental.status === "undervalued" ? "success" : result.fundamental.status === "overvalued" ? "danger" : "warning"}`}
+                        style={{ fontSize: 11, padding: "4px 10px", textTransform: "uppercase" }}>
+                        {result.fundamental.status}
+                      </span>
+                    )}
                   </div>
-                  <div className="health-bar-bg">
-                    <div className="health-bar-fill" style={{ width: result?.fundamental?.health_score != null ? `${result.fundamental.health_score}%` : "0%" }} />
-                  </div>
+                  {result?.recommendation ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: 14, lineHeight: 1.7 }}>
+                      <div style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: 10, borderLeft: "3px solid var(--accent-blue)" }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 6 }}>Kesimpulan</p>
+                        <p style={{ color: "var(--text-muted)", fontSize: 13 }}>{result.recommendation.summary}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Jangka Pendek</p>
+                        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>{result.recommendation.short_term}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Jangka Menengah-Panjang</p>
+                        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>{result.recommendation.medium_long_term}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 13 }}>
+                      Upload data harga <strong>dan</strong> laporan keuangan untuk melihat rekomendasi.
+                    </div>
+                  )}
                 </div>
               </div>
+
             </>)}
           </>
         )}
@@ -582,8 +804,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                         <XAxis dataKey="date" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} minTickGap={30} />
                         <YAxis domain={["auto", "auto"]} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }}
+                        <RechartsTooltip contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }}
                           formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]}
                         />
                         <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
@@ -625,6 +846,12 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                       <span style={{ fontSize: 13, color: "var(--text-muted)" }}>MAPE</span>
                       <strong style={{ fontSize: 14 }}>{arimaActiveForecast?.metrics?.mape != null ? arimaActiveForecast.metrics.mape.toFixed(2) + "%" : "-"}</strong>
                     </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, marginTop: 2, borderTop: "1px solid var(--border-color)" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>Interpretasi MAPE</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: arimaActiveForecast?.metrics?.mape != null ? (arimaActiveForecast.metrics.mape < 10 ? "var(--accent-green)" : arimaActiveForecast.metrics.mape < 20 ? "#f59e0b" : "var(--accent-red)") : "var(--text-muted)" }}>
+                        {arimaActiveForecast?.metrics?.mape != null ? (arimaActiveForecast.metrics.mape < 10 ? "Sangat Baik" : arimaActiveForecast.metrics.mape < 20 ? "Baik" : "Cukup") : "-"}
+                      </span>
+                    </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Jumlah Prediksi</span>
                       <strong style={{ fontSize: 14, color: arimaActiveForecast?.forecast?.length > 0 ? "var(--accent-green)" : "var(--text-muted)" }}>
@@ -635,6 +862,54 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                 </div>
               </div>
             </div>
+
+            {/* ── Zoom Chart Proyeksi — skala ketat, CI band ── */}
+            {arimaForecastOnlyData.length > 1 && (
+              <div className="card">
+                <div className="card-header-flex">
+                  <div className="card-title-section">
+                    <h3>Detail Pergerakan Proyeksi</h3>
+                    <p>Skala diperbesar — hanya menampilkan titik proyeksi dengan 95% Confidence Interval</p>
+                  </div>
+                </div>
+                <div style={{ height: 280, width: "100%" }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={arimaForecastOnlyData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="ciArea" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0047b3" stopOpacity={0.12} />
+                          <stop offset="95%" stopColor="#0047b3" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="date" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} minTickGap={20} />
+                      <YAxis domain={arimaForecastYDomain} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
+                      <RechartsTooltip
+                        contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }}
+                        formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                      {/* CI upper sebagai area atas */}
+                      <Area type="monotone" dataKey="upper" stroke="none" fill="#dbeafe" fillOpacity={0.5} name="Batas Atas CI" dot={false} legendType="none" />
+                      {/* CI lower sebagai area bawah (fill ke upper membentuk band) */}
+                      <Area type="monotone" dataKey="lower" stroke="none" fill="#ffffff" fillOpacity={1} name="Batas Bawah CI" dot={false} legendType="none" />
+                      {/* Garis proyeksi utama */}
+                      <Area type="monotone" dataKey="forecast" stroke="#0047b3" strokeWidth={2.5} fill="url(#ciArea)" name="Harga Proyeksi" dot={{ r: 3, fill: "#0047b3", strokeWidth: 0 }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ display: "flex", gap: 24, marginTop: 12, padding: "12px 0 0", borderTop: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    <span style={{ display: "inline-block", width: 12, height: 3, background: "#0047b3", borderRadius: 2, marginRight: 6, verticalAlign: "middle" }} />
+                    Harga proyeksi (titik tengah estimasi)
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    <span style={{ display: "inline-block", width: 12, height: 8, background: "#dbeafe", borderRadius: 2, marginRight: 6, verticalAlign: "middle" }} />
+                    Area 95% CI — rentang kemungkinan harga aktual
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Tabel Forecast Lengkap */}
             {arimaActiveForecast?.forecast?.length > 0 && (
@@ -650,8 +925,8 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                         <th>Tanggal</th>
                         <th>Harga Prediksi</th>
                         <th>Perubahan (vs hari sebelumnya)</th>
-                        <th>Batas Bawah (−2%)</th>
-                        <th>Batas Atas (+2%)</th>
+                        <th>Batas Bawah (95% CI)</th>
+                        <th>Batas Atas (95% CI)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -673,8 +948,8 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                                 </span>
                               ) : "-"}
                             </td>
-                            <td style={{ color: "var(--text-muted)" }}>{formatRupiah(item.value * 0.98)}</td>
-                            <td style={{ color: "var(--text-muted)" }}>{formatRupiah(item.value * 1.02)}</td>
+                            <td style={{ color: "var(--text-muted)" }}>{item.lower != null ? formatRupiah(item.lower) : formatRupiah(item.value * 0.98)}</td>
+                            <td style={{ color: "var(--text-muted)" }}>{item.upper != null ? formatRupiah(item.upper) : formatRupiah(item.value * 1.02)}</td>
                           </tr>
                         );
                       })}
@@ -771,29 +1046,113 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                 </div>
               </div>
               {result?.fundamental?.rows?.length > 1 && (
-                <div className="card">
-                  <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Riwayat Per Tahun</h3>
-                  <div className="table-responsive">
-                    <table className="custom-table" style={{ fontSize: 13 }}>
-                      <thead><tr><th>Tahun</th><th>EPS</th><th>PER</th><th>ROE</th><th>DER</th><th>BVPS</th><th>PBV</th><th>Harga Pasar</th><th>Nilai Intrinsik</th></tr></thead>
-                      <tbody>
-                        {result.fundamental.rows.map((row, i) => (
-                          <tr key={i}>
-                            <td><strong>{row.year}</strong></td>
-                            <td>{row.eps != null ? `IDR ${row.eps.toLocaleString("id-ID", { maximumFractionDigits: 0 })}` : "-"}</td>
-                            <td>{row.per != null ? `${row.per.toFixed(2)}x` : "-"}</td>
-                            <td>{row.roe != null ? `${(row.roe * 100).toFixed(1)}%` : "-"}</td>
-                            <td>{row.der != null ? `${row.der.toFixed(2)}x` : "-"}</td>
-                            <td>{row.bvps != null ? `IDR ${row.bvps.toLocaleString("id-ID", { maximumFractionDigits: 0 })}` : "-"}</td>
-                            <td>{row.pbv != null ? `${row.pbv.toFixed(2)}x` : "-"}</td>
-                            <td>{row.market_price != null ? formatRupiah(row.market_price) : "-"}</td>
-                            <td>{row.intrinsic_value != null ? formatRupiah(row.intrinsic_value) : "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <>
+                  {/* Chart Tren Fundamental per Tahun */}
+                  <div className="card">
+                    <div className="card-header-flex">
+                      <div className="card-title-section">
+                        <h3>Tren Rasio Keuangan per Tahun</h3>
+                        <p>Visualisasi pergerakan indikator fundamental dari tahun ke tahun</p>
+                      </div>
+                    </div>
+                    <div className="grid-2" style={{ gap: 24 }}>
+                      {/* Chart ROE & ROA */}
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>ROE & ROA (%)</p>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={result.fundamental.rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
+                            <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                              formatter={(val, name) => [`${(val * 100).toFixed(2)}%`, name]} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <Bar dataKey="roe" name="ROE" fill="#0047b3" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="roa" name="ROA" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Chart EPS */}
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>EPS (Rupiah per Lembar)</p>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={result.fundamental.rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
+                            <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                              formatter={(val) => [formatRupiah(val), "EPS"]} />
+                            <Bar dataKey="eps" name="EPS" radius={[4, 4, 0, 0]}>
+                              {result.fundamental.rows.map((_, i) => (
+                                <Cell key={i} fill={_ .eps > 0 ? "#10b981" : "#ef4444"} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Chart PER */}
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>P/E Ratio (×)</p>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={result.fundamental.rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
+                            <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${v.toFixed(0)}x`} />
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                              formatter={(val) => [`${val.toFixed(2)}x`, "PER"]} />
+                            <Bar dataKey="per" name="PER" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Chart DER */}
+                      <div>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 12 }}>DER — Debt to Equity Ratio (×)</p>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={result.fundamental.rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
+                            <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${v.toFixed(1)}x`} />
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                              formatter={(val) => [`${val.toFixed(2)}x`, "DER"]} />
+                            <Bar dataKey="der" name="DER" radius={[4, 4, 0, 0]}>
+                              {result.fundamental.rows.map((row, i) => (
+                                <Cell key={i} fill={row.der <= 1.5 ? "#10b981" : row.der <= 2.5 ? "#f59e0b" : "#ef4444"} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
                   </div>
-                </div>
+
+                  {/* Tabel Riwayat Per Tahun */}
+                  <div className="card">
+                    <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Riwayat Per Tahun</h3>
+                    <div className="table-responsive">
+                      <table className="custom-table" style={{ fontSize: 13 }}>
+                        <thead><tr><th>Tahun</th><th>EPS</th><th>PER</th><th>ROE</th><th>DER</th><th>BVPS</th><th>PBV</th><th>Harga Pasar</th><th>Nilai Intrinsik</th></tr></thead>
+                        <tbody>
+                          {result.fundamental.rows.map((row, i) => (
+                            <tr key={i}>
+                              <td><strong>{row.year}</strong></td>
+                              <td>{row.eps != null ? `IDR ${row.eps.toLocaleString("id-ID", { maximumFractionDigits: 0 })}` : "-"}</td>
+                              <td>{row.per != null ? `${row.per.toFixed(2)}x` : "-"}</td>
+                              <td>{row.roe != null ? `${(row.roe * 100).toFixed(1)}%` : "-"}</td>
+                              <td>{row.der != null ? `${row.der.toFixed(2)}x` : "-"}</td>
+                              <td>{row.bvps != null ? `IDR ${row.bvps.toLocaleString("id-ID", { maximumFractionDigits: 0 })}` : "-"}</td>
+                              <td>{row.pbv != null ? `${row.pbv.toFixed(2)}x` : "-"}</td>
+                              <td>{row.market_price != null ? formatRupiah(row.market_price) : "-"}</td>
+                              <td>{row.intrinsic_value != null ? formatRupiah(row.intrinsic_value) : "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               )}
             </>)}
           </>
@@ -910,3 +1269,4 @@ function App({ currentUser, onLogout, onUpdateUser }) {
 }
 
 export default App;
+

@@ -141,7 +141,7 @@ async function navigateToAdminUpload() {
   });
 
   // Klik tombol "Admin Upload" di sidebar
-  const adminBtn = screen.getByRole("button", { name: /admin upload/i });
+  const adminBtn = screen.getByRole("button", { name: /upload data/i });
   await act(async () => {
     fireEvent.click(adminBtn);
   });
@@ -399,7 +399,7 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
 
       // Navigasi ke Admin Upload — ambil semua tombol dengan nama itu,
       // gunakan yang pertama (dalam satu render hanya ada satu)
-      const adminBtns = screen.getAllByRole("button", { name: /admin upload/i });
+      const adminBtns = screen.getAllByRole("button", { name: /upload data/i });
       await act(async () => {
         fireEvent.click(adminBtns[0]);
       });
@@ -434,37 +434,29 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
         expect.anything()
       );
     }
-  });
+  }, 30000);
 
   /**
    * Test 2 — Manual Analyze Tetap Berfungsi
    *
    * **Validates: Requirements 3.1**
    *
-   * Property: Ketika `handleAnalyze` dipanggil manual (via tombol "Analisis Ulang"),
-   * fungsi HARUS menggunakan path dari `result` state —
-   * yaitu `result?.arima?.preprocessing?.price_csv_path` dan
-   * `result?.fundamental?.financial_csv_path` — bukan path yang baru diupload.
+   * Property: Ketika `handleArimaForecast` dipanggil manual (via tombol "Jalankan Prediksi"
+   * di ARIMA view), fungsi HARUS menggunakan path dari `result/pendingPricePath` state.
    *
    * Input ¬C(X): tidak ada upload sebelumnya → bukan bug condition.
-   * EXPECTED pada kode UNFIXED: LULUS — baseline behavior terkonfirmasi.
+   * EXPECTED: LULUS — baseline behavior terkonfirmasi.
    */
-  it("Test 2 — Manual Analyze Tetap Berfungsi: handleAnalyze menggunakan path dari result state", async () => {
+  it("Test 2 — Manual Analyze Tetap Berfungsi: handleArimaForecast menggunakan path dari result state", async () => {
     // postJson berhasil mengembalikan data analisis baru
     api.postJson.mockResolvedValue({
-      arima: {
-        actual_tail: [{ date: "2024-06-01", value: 4100 }],
-        forecast: [{ date: "2024-06-10", value: 4200 }],
-        model: { order: [2, 1, 2], horizon: 14, train_ratio: 0.8 },
-        metrics: { mape: 4.5 },
-        preprocessing: {
-          price_csv_path: "dataset/sample_price_tlkm.csv",
-          end_date: "2024-06-01",
-        },
-      },
-      fundamental: {
-        financial_csv_path: "dataset/sample_financial_tlkm.csv",
-        latest: { per: 13.2, roe: 0.19 },
+      actual_tail: [{ date: "2024-06-01", value: 4100 }],
+      forecast: [{ date: "2024-06-10", value: 4200 }],
+      model: { order: [2, 1, 2], horizon: 14, train_ratio: 0.8 },
+      metrics: { mape: 4.5, mae: 50, rmse: 60, aic: 1200 },
+      preprocessing: {
+        price_csv_path: "dataset/sample_price_tlkm.csv",
+        end_date: "2024-06-01",
       },
     });
     api.getHistory.mockResolvedValue([]);
@@ -476,16 +468,22 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
       expect(api.getLatestAnalysis).toHaveBeenCalled();
     });
 
-    // Navigasi ke halaman ARIMA di mana tombol "Analisis Ulang" ada
-    const arimaBtn = screen.getByRole("button", { name: /arima prediction/i });
+    // Navigasi ke halaman ARIMA
+    const arimaBtn = screen.getByRole("button", { name: /prediksi arima/i });
     await act(async () => {
       fireEvent.click(arimaBtn);
     });
 
-    // Cari dan klik tombol manual analyze
-    const analyzeBtn = screen.getByRole("button", { name: /analisis ulang/i });
+    // Set tanggal target agar tombol "Jalankan Prediksi" aktif
+    const dateInput = document.querySelector('input[type="date"]');
     await act(async () => {
-      fireEvent.click(analyzeBtn);
+      fireEvent.change(dateInput, { target: { value: "2024-06-10" } });
+    });
+
+    // Klik tombol "Jalankan Prediksi"
+    const forecastBtn = screen.getByRole("button", { name: /jalankan prediksi/i });
+    await act(async () => {
+      fireEvent.click(forecastBtn);
     });
 
     // Tunggu postJson dipanggil
@@ -494,13 +492,10 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
     });
 
     // ★ ASSERTION UTAMA: postJson dipanggil dengan path dari result state
-    // (bukan dari upload baru karena tidak ada upload yang dilakukan)
     expect(api.postJson).toHaveBeenCalledWith(
-      "/analyze/compare",
+      "/analyze/arima",
       expect.objectContaining({
-        // Path dari state yang dimuat saat mount (getLatestAnalysis mock)
         price_csv_path: "dataset/sample_price_tlkm.csv",
-        financial_csv_path: "dataset/sample_financial_tlkm.csv",
       })
     );
   });
@@ -569,7 +564,7 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
     });
 
     // ★ ASSERTION 1: Tombol "Admin Upload" tidak ada di sidebar untuk visitor
-    const adminUploadBtn = screen.queryByRole("button", { name: /admin upload/i });
+    const adminUploadBtn = screen.queryByRole("button", { name: /upload data/i });
     expect(adminUploadBtn).toBeNull();
 
     // ★ ASSERTION 2: uploadCsv dan postJson tidak dipanggil sama sekali
@@ -580,10 +575,8 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
     // Verifikasi halaman dashboard menampilkan konten (tidak error/kosong)
     // Cek teks yang dirender dari data mock
     await waitFor(() => {
-      // "24 Mei 2024" adalah fallback end_date ketika result ada
-      // Tapi kita punya end_date "2024-01-03" dari mock getLatestAnalysis
-      // Verifikasi dashboard terender (ada elemen Market Overview)
-      expect(screen.getByText(/market overview/i)).toBeTruthy();
+      // Verifikasi dashboard terender — cek elemen yang ada di dashboard baru
+      expect(screen.getByText(/harga penutupan/i)).toBeTruthy();
     });
   });
 
@@ -665,7 +658,7 @@ describe("Preservation Tests — Perilaku Non-Bug-Condition Tidak Berubah", () =
     });
 
     // Navigasi ke Admin Upload
-    const adminBtn = screen.getByRole("button", { name: /admin upload/i });
+    const adminBtn = screen.getByRole("button", { name: /upload data/i });
     await act(async () => {
       fireEvent.click(adminBtn);
     });

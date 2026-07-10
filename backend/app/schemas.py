@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UploadResponse(BaseModel):
@@ -13,7 +13,7 @@ class UploadResponse(BaseModel):
 
 class ArimaRequest(BaseModel):
     price_csv_path: str
-    horizon: int = Field(14, ge=1, le=365)
+    horizon: int = Field(30, ge=1, le=90)
     train_ratio: float = Field(0.8, ge=0.5, le=0.95)
     p: Optional[int] = Field(None, ge=0, le=5)
     d: Optional[int] = Field(None, ge=0, le=2)
@@ -28,7 +28,7 @@ class FundamentalRequest(BaseModel):
 class CompareRequest(BaseModel):
     price_csv_path: str
     financial_csv_path: str
-    horizon: int = Field(14, ge=1, le=365)
+    horizon: int = Field(30, ge=1, le=90)
     train_ratio: float = Field(0.8, ge=0.5, le=0.95)
     per_wajar: float = Field(8.0, gt=0)
     p: Optional[int] = Field(None, ge=0, le=5)
@@ -40,7 +40,7 @@ class CompareRequest(BaseModel):
 
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
-    email: str = Field(...)
+    email: EmailStr = Field(...)
     password: str = Field(..., min_length=6)
     role: str = Field("visitor", pattern="^(admin|visitor)$")
 
@@ -60,5 +60,5 @@ class UserResponse(BaseModel):
 class UserProfileUpdate(BaseModel):
     id: int
     username: Optional[str] = Field(None, min_length=3, max_length=50)
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=6)

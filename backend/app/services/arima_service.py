@@ -119,7 +119,18 @@ def run_arima(
         test_pred = fitted_train.forecast(steps=len(test))
 
         fitted_full = ARIMA(values, order=order, trend=trend).fit()
-        future_pred = fitted_full.forecast(steps=horizon)
+        # get_forecast returns proper confidence intervals that widen with horizon
+        forecast_result = fitted_full.get_forecast(steps=horizon)
+        future_pred = forecast_result.predicted_mean
+        conf_int = forecast_result.conf_int(alpha=0.05)  # 95% CI
+        # conf_int may be DataFrame or ndarray depending on statsmodels version
+        if hasattr(conf_int, 'iloc'):
+            ci_lower = conf_int.iloc[:, 0].to_numpy()
+            ci_upper = conf_int.iloc[:, 1].to_numpy()
+        else:
+            ci_arr = np.asarray(conf_int)
+            ci_lower = ci_arr[:, 0]
+            ci_upper = ci_arr[:, 1]
         aic_score = float(fitted_full.aic)
     except Exception as exc:
         raise HTTPException(
@@ -146,10 +157,19 @@ def run_arima(
         {"date": dt.strftime("%Y-%m-%d"), "actual": float(a), "predicted": float(pv)}
         for dt, a, pv in zip(test_dates, test, test_pred)
     ]
+    # Include per-step confidence intervals in forecast
     forecast = [
-        {"date": dt.strftime("%Y-%m-%d"), "value": float(val)}
-        for dt, val in zip(future_dates, future_pred)
+        {
+            "date": dt.strftime("%Y-%m-%d"),
+            "value": float(val),
+            "lower": float(ci_lower[i]),
+            "upper": float(ci_upper[i]),
+        }
+        for i, (dt, val) in enumerate(zip(future_dates, future_pred))
     ]
+
+    # Summary CI dari step terakhir untuk referensi cepat di frontend
+    last_ci = forecast[-1] if forecast else {}
 
     return {
         "preprocessing": {**preprocessing, "price_csv_path": preprocessing.get("price_csv_path", "")},
@@ -164,6 +184,10 @@ def run_arima(
         "actual_tail": actual[-160:],
         "prediction_test": prediction_test,
         "forecast": forecast,
+        "forecast_ci": {
+            "lower_end": last_ci.get("lower"),
+            "upper_end": last_ci.get("upper"),
+        },
         "summary": f"ARIMA{order} menghasilkan MAPE {metrics['mape']:.2f}% pada data testing.",
     }
 

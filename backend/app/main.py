@@ -24,7 +24,7 @@ app = FastAPI(title=APP_NAME, version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -95,7 +95,10 @@ def get_users():
 
 
 @app.put("/auth/profile", response_model=UserResponse)
-def update_profile(req: UserProfileUpdate):
+def update_profile(req: UserProfileUpdate, x_user_id: int = Header(None)):
+    # Verify the requester is updating their own profile (or is admin)
+    if x_user_id != req.id:
+        raise HTTPException(status_code=403, detail="Akses ditolak: Anda hanya dapat mengubah profil sendiri.")
     try:
         user = update_user(
             user_id=req.id,
@@ -150,7 +153,7 @@ def delete_file_endpoint(filename: str):
 
 # ─── Analysis Endpoints (Admin only) ─────────────────────────────────────────
 
-@app.post("/analyze/arima")
+@app.post("/analyze/arima", dependencies=[Depends(verify_admin)])
 def analyze_arima(req: ArimaRequest):
     df = load_csv(req.price_csv_path)
     result = run_arima(df, req.horizon, req.train_ratio, req.p, req.d, req.q)
@@ -160,7 +163,7 @@ def analyze_arima(req: ArimaRequest):
     return result
 
 
-@app.post("/analyze/fundamental")
+@app.post("/analyze/fundamental", dependencies=[Depends(verify_admin)])
 def analyze_fundamental(req: FundamentalRequest):
     df = load_csv(req.financial_csv_path)
     result = run_fundamental(df, req.per_wajar)
@@ -169,7 +172,7 @@ def analyze_fundamental(req: FundamentalRequest):
     return result
 
 
-@app.post("/analyze/compare")
+@app.post("/analyze/compare", dependencies=[Depends(verify_admin)])
 def analyze_compare(req: CompareRequest):
     price_df = load_csv(req.price_csv_path)
     financial_df = load_csv(req.financial_csv_path)

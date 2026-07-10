@@ -2,8 +2,10 @@ const API_BASE = "";
 
 function getHeaders(extraHeaders = {}) {
   const role = localStorage.getItem("role") || "visitor";
+  const userId = localStorage.getItem("userId") || "";
   return {
     "X-Role": role,
+    ...(userId ? { "X-User-Id": userId } : {}),
     ...extraHeaders,
   };
 }
