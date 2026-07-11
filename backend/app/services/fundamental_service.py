@@ -61,29 +61,51 @@ def analyze_fundamental(df: pd.DataFrame, per_wajar: float = 8.0) -> Dict[str, A
         raise HTTPException(status_code=400, detail="Data keuangan tidak memiliki baris valid setelah dibersihkan.")
 
     # ── Auto-scale normalization ──────────────────────────────────────────────
-    # Financial statement columns (income, equity, assets, liabilities) often
-    # come in billions while shares_outstanding is in full units, and
-    # market_price is in rupiah per share. We detect each column's scale
-    # independently and normalize everything to full rupiah / full shares.
+    # Untuk laporan keuangan TLKM, data finansial dalam miliar rupiah (nilai 10.000–300.000)
+    # dan shares_outstanding dalam juta lembar (nilai 90.000–100.000) setelah normalisasi user.
+    # Strategy: deteksi skala berdasarkan magnitude dan konteks kolom.
 
     fin_cols = ["net_income", "total_equity", "total_assets", "total_liabilities"]
     for col in fin_cols:
-        scale = _detect_scale(work[col])
-        if scale != 1.0:
-            work[col] = work[col] * scale
+        med = work[col].abs().median()
+        if med == 0:
+            continue
+        if med < 500:
+            # Kemungkinan sudah dalam triliun → ×1e12
+            work[col] = work[col] * 1e12
+        elif med < 500_000:
+            # Kemungkinan dalam miliar rupiah (range umum laporan keuangan TLKM: 10.000–300.000)
+            work[col] = work[col] * 1e9
+        elif med < 500_000_000:
+            # Kemungkinan dalam juta rupiah
+            work[col] = work[col] * 1e6
+        elif med < 500_000_000_000:
+            # Kemungkinan dalam ribu rupiah
+            work[col] = work[col] * 1e3
+        # else: sudah dalam rupiah penuh
 
-    # shares_outstanding: if median < 10_000, it's in billions of shares
+    # shares_outstanding: deteksi apakah dalam juta, miliar, atau sudah penuh
     shares_med = work["shares_outstanding"].abs().median()
-    if shares_med < 10_000:
+    if shares_med == 0:
+        pass
+    elif shares_med < 500:
+        # Dalam miliar lembar → ×1e9
         work["shares_outstanding"] = work["shares_outstanding"] * 1e9
-    elif shares_med < 10_000_000:
+    elif shares_med < 500_000:
+        # Dalam juta lembar (range umum setelah user bagi 1.000.000: ~99.000) → ×1e6
         work["shares_outstanding"] = work["shares_outstanding"] * 1e6
+    elif shares_med < 500_000_000:
+        # Dalam ribu lembar → ×1e3
+        work["shares_outstanding"] = work["shares_outstanding"] * 1e3
+    # else: sudah dalam lembar penuh (>500 juta → sudah full unit)
 
-    # market_price: should be in rupiah per share (typically 100–50_000 for TLKM)
-    # If median is extremely large, scale down
+    # market_price: harus dalam rupiah per lembar (100–50.000 untuk TLKM)
     price_med = work["market_price"].abs().median()
     if price_med > 1_000_000:
-        work["market_price"] = work["market_price"] / 1000
+        work["market_price"] = work["market_price"] / 1_000
+    elif price_med < 10:
+        # Kemungkinan dalam ribuan rupiah
+        work["market_price"] = work["market_price"] * 1_000
 
     # ── Ratio calculations ────────────────────────────────────────────────────
     work["eps"] = work["net_income"] / work["shares_outstanding"].replace(0, np.nan)
