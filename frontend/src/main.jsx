@@ -2,14 +2,12 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import AppComponent from "./components/App";
 import LoginPage from "./components/LoginPage";
-import RegisterPage from "./components/RegisterPage";
 import "./styles/style.css";
 
-// Re-export App for test compatibility
 export { AppComponent as App };
 
 function Root() {
-  const [authView, setAuthView] = useState("login");
+  const [showLogin, setShowLogin] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const user = JSON.parse(localStorage.getItem("currentUser"));
@@ -24,6 +22,7 @@ function Root() {
     localStorage.setItem("role", user.role);
     localStorage.setItem("userId", String(user.id));
     setCurrentUser(user);
+    setShowLogin(false);
   };
 
   const handleLogout = () => {
@@ -31,15 +30,20 @@ function Root() {
     localStorage.removeItem("role");
     localStorage.removeItem("userId");
     setCurrentUser(null);
-    setAuthView("login");
   };
 
-  if (!currentUser) {
-    if (authView === "register") return <RegisterPage onGoLogin={() => setAuthView("login")} />;
-    return <LoginPage onLogin={handleLogin} onGoRegister={() => setAuthView("register")} />;
+  if (showLogin && !currentUser) {
+    return <LoginPage onLogin={handleLogin} onGoRegister={() => setShowLogin(false)} />;
   }
 
-  return <AppComponent currentUser={currentUser} onLogout={handleLogout} onUpdateUser={handleLogin} />;
+  return (
+    <AppComponent 
+      currentUser={currentUser} 
+      onLogout={handleLogout} 
+      onUpdateUser={handleLogin}
+      onGoLogin={() => setShowLogin(true)}
+    />
+  );
 }
 
 createRoot(document.getElementById("root")).render(<Root />);

@@ -62,7 +62,7 @@ function InfoIcon() {
   );
 }
 
-function App({ currentUser, onLogout, onUpdateUser }) {
+function App({ currentUser, onLogout, onUpdateUser, onGoLogin }) {
   const role = currentUser?.role || "visitor";
   const [currentView, setCurrentView] = useState("dashboard");
   const [status, setStatus] = useState("");
@@ -474,17 +474,20 @@ function App({ currentUser, onLogout, onUpdateUser }) {
   const viewTitles = {
     dashboard: "DASHBOARD OVERVIEW", arima: "PREDIKSI ARIMA",
     fundamental: "ANALISIS FUNDAMENTAL", profile: "PENGATURAN PROFIL",
+    admin_mgmt: "MANAJEMEN ADMIN",
   };
   const viewSubtitles = {
     dashboard: "Perbandingan hasil prediksi ARIMA dan analisis fundamental TLKM beserta rekomendasi.",
     arima: "Upload data harga dan lihat proyeksi pergerakan harga saham Telkom menggunakan model ARIMA.",
     fundamental: "Upload laporan keuangan dan lihat evaluasi fundamental, valuasi intrinsik, dan rasio keuangan.",
     profile: "Perbarui informasi akun Anda seperti username, email, dan password.",
+    admin_mgmt: "Tambah dan kelola akun administrator.",
   };
 
   return (
-    <main className="app-shell">
-      {/* Sidebar */}
+    <main className={`app-shell ${role !== "admin" ? "visitor-mode" : ""}`}>
+      {/* Sidebar - Admin Only */}
+      {role === "admin" && (
       <aside className="sidebar">
         <div>
           <div className="brand-section">
@@ -496,6 +499,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
               { view: "dashboard", icon: <TrendingUp size={16} />, label: "Dashboard" },
               { view: "arima", icon: <Activity size={16} />, label: "Prediksi ARIMA" },
               { view: "fundamental", icon: <BarChart3 size={16} />, label: "Fundamental" },
+              ...(role === "admin" ? [{ view: "admin_mgmt", icon: <Shield size={16} />, label: "Manajemen Admin" }] : [])
             ].map(({ view, icon, label }) => (
               <li key={view}>
                 <button className={`nav-item-btn ${currentView === view ? "active" : ""}`} onClick={() => setCurrentView(view)}>
@@ -520,15 +524,47 @@ function App({ currentUser, onLogout, onUpdateUser }) {
               <Settings size={16} />
             </button>
           </div>
-          <button className="role-switcher-btn" onClick={onLogout} style={{ borderColor: "#fee2e2", color: "#b91c1c", background: "#fef2f2", marginTop: 16 }}>
+          <button className="role-switcher-btn" onClick={onLogout} style={{ borderColor: "var(--accent-red)", color: "#f87171", background: "rgba(239,68,68,0.1)", marginTop: 16 }}>
             <Shield size={14} />Keluar (Logout)
           </button>
         </div>
       </aside>
+      )}
+
+      {/* Navbar - Visitor Only */}
+      {role !== "admin" && (
+        <nav className="visitor-navbar">
+          <div className="visitor-navbar-brand">
+            <h2 className="brand-name">TLKM PREDICT</h2>
+            <div className="brand-sub">Professional Analytics</div>
+          </div>
+          <div className="visitor-navbar-links">
+            {[
+              { view: "dashboard", label: "Dashboard" },
+              { view: "arima", label: "Prediksi ARIMA" },
+              { view: "fundamental", label: "Fundamental" },
+            ].map(({ view, label }) => (
+              <button 
+                key={view} 
+                className={`visitor-nav-item ${currentView === view ? "active" : ""}`} 
+                onClick={() => setCurrentView(view)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="visitor-navbar-actions">
+            <button className="visitor-login-btn" onClick={onGoLogin}>
+              <Shield size={14} /> Login Admin
+            </button>
+          </div>
+        </nav>
+      )}
 
       {/* Content */}
       <section className="content-wrapper">
-        {/* Topbar */}
+        {/* Topbar - Admin Only */}
+        {role === "admin" && (
         <header className="topbar">
           <div className="topbar-title-section">
             <h1>{viewTitles[currentView]}</h1>
@@ -541,6 +577,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
             </div>
           </div>
         </header>
+        )}
 
         {/* Status Banner */}
         {status && (
@@ -557,24 +594,24 @@ function App({ currentUser, onLogout, onUpdateUser }) {
             display: "flex", alignItems: "center", justifyContent: "center"
           }}>
             <div style={{
-              background: "#ffffff", borderRadius: 16, padding: "40px 48px",
+              background: "#1e293b", borderRadius: 16, padding: "40px 48px",
               textAlign: "center", maxWidth: 400, width: "90%",
               boxShadow: "0 20px 60px rgba(0,0,0,0.25)"
             }}>
               <div style={{
                 width: 56, height: 56, borderRadius: "50%",
-                background: "#d1fae5", display: "flex", alignItems: "center",
+                background: "var(--accent-green-light)", display: "flex", alignItems: "center",
                 justifyContent: "center", margin: "0 auto 20px"
               }}>
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </div>
-              <h3 style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>Data Berhasil Diproses</h3>
-              <p style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)", marginBottom: 8 }}>Data Berhasil Diproses</h3>
+              <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 4 }}>
                 <strong>{uploadSuccess.filename}</strong>
               </p>
-              <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
+              <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>
                 {uploadSuccess.rows} baris data berhasil dianalisis
               </p>
               <p style={{ fontSize: 12, color: "#94a3b8" }}>
@@ -599,9 +636,9 @@ function App({ currentUser, onLogout, onUpdateUser }) {
             )}
             {/* Partial state — hanya ARIMA */}
             {result && result.arima && !result.fundamental && (
-              <div className="card" style={{ padding: "16px 20px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
+              <div className="card" style={{ padding: "16px 20px", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
                 <Info size={18} color="#d97706" style={{ flexShrink: 0 }} />
-                <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>
+                <p style={{ fontSize: 13, color: "#fbbf24", margin: 0 }}>
                   Data ARIMA sudah tersedia. Upload laporan keuangan di halaman <strong>Fundamental</strong> untuk melihat perbandingan lengkap dan rekomendasi gabungan.
                 </p>
                 <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: 12, flexShrink: 0 }} onClick={() => setCurrentView("fundamental")}>
@@ -611,9 +648,9 @@ function App({ currentUser, onLogout, onUpdateUser }) {
             )}
             {/* Partial state — hanya Fundamental */}
             {result && result.fundamental && !result.arima && (
-              <div className="card" style={{ padding: "16px 20px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
+              <div className="card" style={{ padding: "16px 20px", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 10, display: "flex", alignItems: "center", gap: 14 }}>
                 <Info size={18} color="#d97706" style={{ flexShrink: 0 }} />
-                <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>
+                <p style={{ fontSize: 13, color: "#fbbf24", margin: 0 }}>
                   Data Fundamental sudah tersedia. Upload data harga saham di halaman <strong>Prediksi ARIMA</strong> untuk melihat perbandingan lengkap dan rekomendasi gabungan.
                 </p>
                 <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: 12, flexShrink: 0 }} onClick={() => setCurrentView("arima")}>
@@ -676,14 +713,14 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                           <XAxis dataKey="date" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} minTickGap={20} />
                           <YAxis domain={dashboardYDomain} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
-                          <RechartsTooltip contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }} formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]} />
+                          <RechartsTooltip contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }} formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]} />
                           <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
                           <Area type="monotone" dataKey="actual" stroke="#0047b3" strokeWidth={2} fill="url(#dashActual)" name="Harga Aktual" dot={false} connectNulls={false} />
                           <Area type="monotone" dataKey="forecast" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" fill="url(#dashForecast)" name="Proyeksi" dot={false} connectNulls={false} />
                         </AreaChart>
                       </ResponsiveContainer>
                     ) : (
-                      <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#64748b" }}>Belum ada data visualisasi</div>
+                      <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>Belum ada data visualisasi</div>
                     )}
                   </div>
                 </div>
@@ -803,7 +840,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                   </div>
                   {result?.recommendation ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: 14, lineHeight: 1.7 }}>
-                      <div style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: 10, borderLeft: "3px solid var(--accent-blue)" }}>
+                      <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.05)", borderRadius: 10, borderLeft: "3px solid var(--accent-blue)" }}>
                         <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 6 }}>Kesimpulan</p>
                         <p style={{ color: "var(--text-muted)", fontSize: 13 }}>{result.recommendation.summary}</p>
                       </div>
@@ -968,7 +1005,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                         <XAxis dataKey="date" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} minTickGap={30} />
                         <YAxis domain={["auto", "auto"]} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
-                        <RechartsTooltip contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }}
+                        <RechartsTooltip contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }}
                           formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]}
                         />
                         <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
@@ -977,7 +1014,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "#64748b" }}>Belum ada data visualisasi</div>
+                    <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>Belum ada data visualisasi</div>
                   )}
                 </div>
               </div>
@@ -1049,14 +1086,14 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                       <XAxis dataKey="date" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} minTickGap={20} />
                       <YAxis domain={arimaForecastYDomain} tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
                       <RechartsTooltip
-                        contentStyle={{ backgroundColor: "#ffffff", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12 }}
+                        contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }}
                         formatter={(val, name) => [val != null ? formatRupiah(val) : "-", name]}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
                       {/* CI upper sebagai area atas */}
                       <Area type="monotone" dataKey="upper" stroke="none" fill="#dbeafe" fillOpacity={0.5} name="Batas Atas CI" dot={false} legendType="none" />
                       {/* CI lower sebagai area bawah (fill ke upper membentuk band) */}
-                      <Area type="monotone" dataKey="lower" stroke="none" fill="#ffffff" fillOpacity={1} name="Batas Bawah CI" dot={false} legendType="none" />
+                      <Area type="monotone" dataKey="lower" stroke="none" fill="#0f172a" fillOpacity={1} name="Batas Bawah CI" dot={false} legendType="none" />
                       {/* Garis proyeksi utama */}
                       <Area type="monotone" dataKey="forecast" stroke="#0047b3" strokeWidth={2.5} fill="url(#ciArea)" name="Harga Proyeksi" dot={{ r: 3, fill: "#0047b3", strokeWidth: 0 }} />
                     </AreaChart>
@@ -1275,7 +1312,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
                             <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
-                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }}
                               formatter={(val, name) => [`${(val * 100).toFixed(2)}%`, name]} />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Bar dataKey="roe" name="ROE" fill="#0047b3" radius={[4, 4, 0, 0]} />
@@ -1292,7 +1329,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
                             <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
-                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }}
                               formatter={(val) => [formatRupiah(val), "EPS"]} />
                             <Bar dataKey="eps" name="EPS" radius={[4, 4, 0, 0]}>
                               {result.fundamental.rows.map((_, i) => (
@@ -1311,7 +1348,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
                             <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${v.toFixed(0)}x`} />
-                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }}
                               formatter={(val) => [`${val.toFixed(2)}x`, "PER"]} />
                             <Bar dataKey="per" name="PER" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                           </BarChart>
@@ -1326,7 +1363,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="year" tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} />
                             <YAxis tickLine={false} axisLine={false} style={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => `${v.toFixed(1)}x`} />
-                            <RechartsTooltip contentStyle={{ backgroundColor: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                            <RechartsTooltip contentStyle={{ backgroundColor: "#1e293b", borderRadius: 8, border: "1px solid var(--border-color)", fontSize: 12, color: "#f8fafc" }}
                               formatter={(val) => [`${val.toFixed(2)}x`, "DER"]} />
                             <Bar dataKey="der" name="DER" radius={[4, 4, 0, 0]}>
                               {result.fundamental.rows.map((row, i) => (
@@ -1370,7 +1407,7 @@ function App({ currentUser, onLogout, onUpdateUser }) {
         )}
 
         {/* ── Riwayat Analisis (Footer) ── */}
-        {currentView !== "profile" && (
+        {currentView !== "profile" && currentView !== "admin_mgmt" && (
           <div className="card">
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Riwayat Analisis Terbaru</h3>
             <div className="table-responsive">
@@ -1394,6 +1431,57 @@ function App({ currentUser, onLogout, onUpdateUser }) {
 
         {/* ── VIEW: PROFILE ── */}
         {currentView === "profile" && <ProfileSettingsView currentUser={currentUser} onUpdateUser={onUpdateUser} />}
+
+        {/* ── VIEW: MANAJEMEN ADMIN ── */}
+        {currentView === "admin_mgmt" && role === "admin" && (
+          <div className="card" style={{ maxWidth: 600, margin: "0 auto" }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Tambah Akun Admin Baru</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.target);
+              const payload = Object.fromEntries(fd.entries());
+              payload.role = "admin";
+              try {
+                setStatus("Membuat akun admin...");
+                await postJson("/auth/register", payload);
+                setStatus("Akun admin berhasil dibuat.");
+                e.target.reset();
+              } catch (err) {
+                setStatus(`Gagal membuat akun: ${err.message}`);
+              }
+            }} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div className="grid-2" style={{ gap: 16 }}>
+                <div>
+                  <label className="input-label" style={{display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: 'var(--text-muted)'}}>Nama Depan</label>
+                  <input type="text" name="first_name" style={{width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)', outline: 'none'}} placeholder="Nama depan" required />
+                </div>
+                <div>
+                  <label className="input-label" style={{display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: 'var(--text-muted)'}}>Nama Belakang</label>
+                  <input type="text" name="last_name" style={{width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)', outline: 'none'}} placeholder="Nama belakang" required />
+                </div>
+              </div>
+              <div className="grid-2" style={{ gap: 16 }}>
+                <div>
+                  <label className="input-label" style={{display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: 'var(--text-muted)'}}>Email</label>
+                  <input type="email" name="email" style={{width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)', outline: 'none'}} placeholder="admin@example.com" required />
+                </div>
+                <div>
+                  <label className="input-label" style={{display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: 'var(--text-muted)'}}>No Telp</label>
+                  <input type="text" name="phone" style={{width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)', outline: 'none'}} placeholder="081234567890" required />
+                </div>
+              </div>
+              <div>
+                <label className="input-label" style={{display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: 'var(--text-muted)'}}>Username</label>
+                <input type="text" name="username" style={{width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)', outline: 'none'}} placeholder="adminbaru" required minLength="3" />
+              </div>
+              <div>
+                <label className="input-label" style={{display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, color: 'var(--text-muted)'}}>Password</label>
+                <input type="password" name="password" style={{width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)', outline: 'none'}} placeholder="Minimal 6 karakter" required minLength="6" />
+              </div>
+              <button type="submit" className="btn-primary" style={{ marginTop: 16 }}>Buat Akun Admin</button>
+            </form>
+          </div>
+        )}
 
       </section>
     </main>

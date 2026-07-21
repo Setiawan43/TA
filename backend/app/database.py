@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# pyrefly: ignore [missing-import]
 from passlib.context import CryptContext
 
 BASE_DIR = os.path.dirname(__file__)
@@ -52,6 +53,16 @@ def init_db() -> None:
             """
         )
         conn.commit()
+        
+        # Add new columns if they don't exist
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT ''")
+            conn.execute("ALTER TABLE users ADD COLUMN last_name TEXT DEFAULT ''")
+            conn.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass # Columns likely exist already
+        
         # Seed default admin account if not yet created
         _seed_admin(conn)
 
@@ -62,14 +73,17 @@ def _seed_admin(conn: sqlite3.Connection) -> None:
     if not exists:
         conn.execute(
             """
-            INSERT INTO users (username, email, password_hash, role, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (username, email, password_hash, role, first_name, last_name, phone, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "admin",
                 "admin@tlkm.local",
                 pwd_context.hash("admin123"),
                 "admin",
+                "Super",
+                "Admin",
+                "",
                 datetime.now().isoformat(timespec="seconds"),
             ),
         )
@@ -78,16 +92,24 @@ def _seed_admin(conn: sqlite3.Connection) -> None:
 
 # ─── User Auth Functions ──────────────────────────────────────────────────────
 
-def create_user(username: str, email: str, password: str, role: str = "visitor") -> Dict[str, Any]:
+def create_user(
+    username: str, 
+    email: str, 
+    password: str, 
+    role: str = "visitor",
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = ""
+) -> Dict[str, Any]:
     password_hash = pwd_context.hash(password)
     with get_connection() as conn:
         try:
             cur = conn.execute(
                 """
-                INSERT INTO users (username, email, password_hash, role, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (username, email, password_hash, role, first_name, last_name, phone, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (username, email, password_hash, role, datetime.now().isoformat(timespec="seconds")),
+                (username, email, password_hash, role, first_name, last_name, phone, datetime.now().isoformat(timespec="seconds")),
             )
             conn.commit()
             return {"id": cur.lastrowid, "username": username, "email": email, "role": role}
@@ -102,7 +124,7 @@ def create_user(username: str, email: str, password: str, role: str = "visitor")
 def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, username, email, password_hash, role, created_at FROM users WHERE username = ?",
+            "SELECT id, username, email, password_hash, role, first_name, last_name, phone, created_at FROM users WHERE username = ?",
             (username,),
         ).fetchone()
         return dict(row) if row else None
@@ -111,7 +133,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, username, email, password_hash, role, created_at FROM users WHERE email = ?",
+            "SELECT id, username, email, password_hash, role, first_name, last_name, phone, created_at FROM users WHERE email = ?",
             (email,),
         ).fetchone()
         return dict(row) if row else None
@@ -133,12 +155,20 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 def list_users() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, username, email, role, created_at FROM users ORDER BY id ASC"
+            "SELECT id, username, email, role, first_name, last_name, phone, created_at FROM users ORDER BY id ASC"
         ).fetchall()
         return [dict(row) for row in rows]
 
 
-def update_user(user_id: int, username: str | None = None, email: str | None = None, password: str | None = None) -> Optional[Dict[str, Any]]:
+def update_user(
+    user_id: int, 
+    username: str | None = None, 
+    email: str | None = None, 
+    password: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    phone: str | None = None
+) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         # Check existence
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -156,6 +186,15 @@ def update_user(user_id: int, username: str | None = None, email: str | None = N
         if password is not None:
             updates.append("password_hash = ?")
             params.append(pwd_context.hash(password))
+        if first_name is not None:
+            updates.append("first_name = ?")
+            params.append(first_name)
+        if last_name is not None:
+            updates.append("last_name = ?")
+            params.append(last_name)
+        if phone is not None:
+            updates.append("phone = ?")
+            params.append(phone)
             
         if not updates:
             return dict(row)
@@ -166,7 +205,7 @@ def update_user(user_id: int, username: str | None = None, email: str | None = N
             conn.commit()
             
             # Return updated user
-            updated_row = conn.execute("SELECT id, username, email, role, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+            updated_row = conn.execute("SELECT id, username, email, role, first_name, last_name, phone, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
             return dict(updated_row) if updated_row else None
         except sqlite3.IntegrityError as e:
             if "username" in str(e):

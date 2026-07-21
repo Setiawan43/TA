@@ -72,6 +72,9 @@ def register(req: UserRegister):
             email=req.email,
             password=req.password,
             role=req.role,
+            first_name=req.first_name,
+            last_name=req.last_name,
+            phone=req.phone,
         )
         return user
     except ValueError as e:
@@ -104,7 +107,10 @@ def update_profile(req: UserProfileUpdate, x_user_id: int = Header(None)):
             user_id=req.id,
             username=req.username,
             email=req.email,
-            password=req.password
+            password=req.password,
+            first_name=req.first_name,
+            last_name=req.last_name,
+            phone=req.phone
         )
         if not user:
             raise HTTPException(status_code=404, detail="User tidak ditemukan.")
@@ -151,9 +157,9 @@ def delete_file_endpoint(filename: str):
     return {"success": True, "message": f"File {filename} berhasil dihapus."}
 
 
-# ─── Analysis Endpoints (Admin only) ─────────────────────────────────────────
+# ─── Analysis Endpoints (All users) ──────────────────────────────────────────
 
-@app.post("/analyze/arima", dependencies=[Depends(verify_admin)])
+@app.post("/analyze/arima")
 def analyze_arima(req: ArimaRequest):
     df = load_csv(req.price_csv_path)
     result = run_arima(df, req.horizon, req.train_ratio, req.p, req.d, req.q)
@@ -165,7 +171,7 @@ def analyze_arima(req: ArimaRequest):
     return result
 
 
-@app.post("/analyze/fundamental", dependencies=[Depends(verify_admin)])
+@app.post("/analyze/fundamental")
 def analyze_fundamental(req: FundamentalRequest):
     df = load_csv(req.financial_csv_path)
     result = run_fundamental(df, req.per_wajar)
@@ -176,7 +182,7 @@ def analyze_fundamental(req: FundamentalRequest):
     return result
 
 
-@app.post("/analyze/compare", dependencies=[Depends(verify_admin)])
+@app.post("/analyze/compare")
 def analyze_compare(req: CompareRequest):
     price_df = load_csv(req.price_csv_path)
     financial_df = load_csv(req.financial_csv_path)

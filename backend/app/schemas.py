@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -43,6 +44,9 @@ class UserRegister(BaseModel):
     email: EmailStr = Field(...)
     password: str = Field(..., min_length=6)
     role: str = Field("visitor", pattern="^(admin|visitor)$")
+    first_name: Optional[str] = Field("", max_length=50)
+    last_name: Optional[str] = Field("", max_length=50)
+    phone: Optional[str] = Field("", max_length=20)
 
 
 class UserLogin(BaseModel):
@@ -55,6 +59,9 @@ class UserResponse(BaseModel):
     username: str
     email: str
     role: str
+    first_name: str = ""
+    last_name: str = ""
+    phone: str = ""
 
 
 class UserProfileUpdate(BaseModel):
@@ -62,3 +69,6 @@ class UserProfileUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=6)
+    first_name: Optional[str] = Field(None, max_length=50)
+    last_name: Optional[str] = Field(None, max_length=50)
+    phone: Optional[str] = Field(None, max_length=20)
