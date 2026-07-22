@@ -157,9 +157,9 @@ def delete_file_endpoint(filename: str):
     return {"success": True, "message": f"File {filename} berhasil dihapus."}
 
 
-# ─── Analysis Endpoints (All users) ──────────────────────────────────────────
+# ─── Analysis Endpoints (Admin only) ────────────────────────────────────────
 
-@app.post("/analyze/arima")
+@app.post("/analyze/arima", dependencies=[Depends(verify_admin)])
 def analyze_arima(req: ArimaRequest):
     df = load_csv(req.price_csv_path)
     result = run_arima(df, req.horizon, req.train_ratio, req.p, req.d, req.q)
@@ -171,7 +171,7 @@ def analyze_arima(req: ArimaRequest):
     return result
 
 
-@app.post("/analyze/fundamental")
+@app.post("/analyze/fundamental", dependencies=[Depends(verify_admin)])
 def analyze_fundamental(req: FundamentalRequest):
     df = load_csv(req.financial_csv_path)
     result = run_fundamental(df, req.per_wajar)
@@ -182,7 +182,7 @@ def analyze_fundamental(req: FundamentalRequest):
     return result
 
 
-@app.post("/analyze/compare")
+@app.post("/analyze/compare", dependencies=[Depends(verify_admin)])
 def analyze_compare(req: CompareRequest):
     price_df = load_csv(req.price_csv_path)
     financial_df = load_csv(req.financial_csv_path)

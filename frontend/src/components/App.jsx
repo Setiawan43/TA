@@ -62,7 +62,7 @@ function InfoIcon() {
   );
 }
 
-function App({ currentUser, onLogout, onUpdateUser, onGoLogin }) {
+function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
   const role = currentUser?.role || "visitor";
   const [currentView, setCurrentView] = useState("dashboard");
   const [status, setStatus] = useState("");

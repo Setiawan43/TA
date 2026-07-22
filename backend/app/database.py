@@ -149,7 +149,15 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
         return None
     if not verify_password(password, user["password_hash"]):
         return None
-    return {"id": user["id"], "username": user["username"], "email": user["email"], "role": user["role"]}
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "email": user["email"],
+        "role": user["role"],
+        "first_name": user.get("first_name", ""),
+        "last_name": user.get("last_name", ""),
+        "phone": user.get("phone", ""),
+    }
 
 
 def list_users() -> List[Dict[str, Any]]:

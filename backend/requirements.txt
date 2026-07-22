@@ -6,4 +6,3 @@ statsmodels>=0.14.2
 python-multipart>=0.0.9
 pydantic[email]>=2.8.2
 passlib[bcrypt]>=1.7.4
-hypothesis>=6.0.0
