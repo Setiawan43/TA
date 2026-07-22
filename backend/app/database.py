@@ -267,14 +267,26 @@ def get_latest_analysis() -> Dict[str, Any] | None:
         if row:
             try:
                 data = json.loads(row["result_json"])
-                # Pastikan path file terinjeksi kembali agar frontend dapat mengakses path CSV untuk forecast ulang
                 if isinstance(data, dict):
+                    # Hanya inject path jika file masih ada di disk
+                    price_file = row["price_file"]
+                    financial_file = row["financial_file"]
+
                     if "arima" in data and isinstance(data["arima"], dict):
                         if "preprocessing" not in data["arima"] or data["arima"]["preprocessing"] is None:
                             data["arima"]["preprocessing"] = {}
-                        data["arima"]["preprocessing"]["price_csv_path"] = row["price_file"]
+                        # Hanya set path jika file benar-benar ada
+                        if price_file and os.path.exists(price_file):
+                            data["arima"]["preprocessing"]["price_csv_path"] = price_file
+                        else:
+                            data["arima"]["preprocessing"]["price_csv_path"] = None
+
                     if "fundamental" in data and isinstance(data["fundamental"], dict):
-                        data["fundamental"]["financial_csv_path"] = row["financial_file"]
+                        if financial_file and os.path.exists(financial_file):
+                            data["fundamental"]["financial_csv_path"] = financial_file
+                        else:
+                            data["fundamental"]["financial_csv_path"] = None
+
                 return data
             except Exception:
                 return None
