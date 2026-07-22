@@ -6,13 +6,15 @@ cmds = [
   "python3 -m venv /opt/venv",
   "/opt/venv/bin/pip install --upgrade pip",
   "/opt/venv/bin/pip install -r backend/requirements.txt",
-  "npm install --prefix frontend"
+  "npm install --prefix frontend",
+  "find /nix/store -name 'libstdc++.so.6' 2>/dev/null | head -5"
 ]
 
 [phases.build]
 cmds = [
-  "npm run build --prefix frontend"
+  "npm run build --prefix frontend",
+  "LIBSTDCPP=$(find /nix/store -name 'libstdc++.so.6' 2>/dev/null | head -1 | xargs dirname) && echo $LIBSTDCPP > /opt/libpath.txt"
 ]
 
 [start]
-cmd = "export LD_LIBRARY_PATH=$(nix-build --no-out-link '<nixpkgs>' -A stdenv.cc.cc.lib)/lib:$LD_LIBRARY_PATH && /opt/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend"
+cmd = "export LD_LIBRARY_PATH=$(cat /opt/libpath.txt):$LD_LIBRARY_PATH && /opt/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend"
