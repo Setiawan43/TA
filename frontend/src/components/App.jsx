@@ -11,6 +11,7 @@ import {
 import { getHistory, getLatestAnalysis, postJson, uploadCsv, getFiles, deleteFile } from "../services/api";
 import MetricCard from "./MetricCard";
 import ProfileSettingsView from "./ProfileSettingsView";
+import BeginnerGuide from "./BeginnerGuide";
 
 // ── Formatter ─────────────────────────────────────────────────────────────────
 const formatRupiah = (val) => {
@@ -85,6 +86,8 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
   const [pendingFinancialPath, setPendingFinancialPath] = useState(null);
   const [filesList, setFilesList] = useState([]);
   const [uploadSuccess, setUploadSuccess] = useState(null); // { filename, rows }
+  const [beginnerMode, setBeginnerMode] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const loadFiles = async () => {
     try { setFilesList(await getFiles()); } catch (error) { console.error(error); }
@@ -533,35 +536,185 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
 
       {/* Navbar - Visitor Only */}
       {role !== "admin" && (
-        <nav className="visitor-navbar">
-          <div className="visitor-navbar-brand">
-            <h2 className="brand-name">TLKM PREDICT</h2>
-            <div className="brand-sub">Professional Analytics</div>
-          </div>
-          <div className="visitor-navbar-links">
+        <>
+          <nav className="visitor-navbar">
+            <div className="visitor-navbar-brand">
+              <h2 className="brand-name">TLKM PREDICT</h2>
+              <div className="brand-sub">Professional Analytics</div>
+            </div>
+            <div className="visitor-navbar-links">
+              {[
+                { view: "dashboard", label: "Dashboard" },
+                { view: "arima", label: "Prediksi ARIMA" },
+                { view: "fundamental", label: "Fundamental" },
+              ].map(({ view, label }) => (
+                <button 
+                  key={view} 
+                  className={`visitor-nav-item ${currentView === view ? "active" : ""}`} 
+                  onClick={() => setCurrentView(view)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="visitor-navbar-actions">
+              <button className={`beginner-toggle-btn ${beginnerMode ? "active" : ""}`} onClick={() => setBeginnerMode(b => !b)}>
+                {beginnerMode ? "🎓 Mode Pemula: ON" : "🎓 Mode Pemula"}
+              </button>
+              <button className="visitor-login-btn" onClick={onGoLogin}>
+                <Shield size={14} /> Login Admin
+              </button>
+            </div>
+          </nav>
+
+          {/* Bottom Navigation - Mobile Only */}
+          <nav className="visitor-bottom-nav">
             {[
-              { view: "dashboard", label: "Dashboard" },
-              { view: "arima", label: "Prediksi ARIMA" },
-              { view: "fundamental", label: "Fundamental" },
-            ].map(({ view, label }) => (
-              <button 
-                key={view} 
-                className={`visitor-nav-item ${currentView === view ? "active" : ""}`} 
+              {
+                view: "dashboard",
+                label: "Dashboard",
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                  </svg>
+                )
+              },
+              {
+                view: "arima",
+                label: "Prediksi",
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                )
+              },
+              {
+                view: "fundamental",
+                label: "Fundamental",
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                  </svg>
+                )
+              },
+            ].map(({ view, label, icon }) => (
+              <button
+                key={view}
+                className={`visitor-bottom-nav-item ${currentView === view ? "active" : ""}`}
                 onClick={() => setCurrentView(view)}
               >
-                {label}
+                {icon}
+                <span>{label}</span>
               </button>
             ))}
-          </div>
-          <div className="visitor-navbar-actions">
-            <button className="visitor-login-btn" onClick={onGoLogin}>
-              <Shield size={14} /> Login Admin
+            <button
+              className={`visitor-bottom-nav-item ${showGuide ? "active" : ""}`}
+              onClick={() => setShowGuide(true)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+              <span>Panduan</span>
             </button>
+          </nav>
+        </>
+      )}
+
+      {/* Admin Top Navbar - Mobile Only */}
+      {role === "admin" && (
+        <nav className="admin-mobile-top-nav">
+          <div className="admin-mobile-brand">
+            <h2 className="brand-name">TLKM PREDICT</h2>
+            <div className="brand-sub">Admin Panel</div>
+          </div>
+          <div className="admin-mobile-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className={`beginner-toggle-btn ${beginnerMode ? "active" : ""}`} onClick={() => setBeginnerMode(b => !b)} style={{ fontSize: 11, padding: "5px 10px" }}>
+              {beginnerMode ? "🎓 ON" : "🎓"}
+            </button>
+            <div className={`profile-avatar`} style={{ width: 32, height: 32, fontSize: 11, cursor: "pointer" }} onClick={() => setCurrentView("profile")}>
+              {currentUser?.username?.slice(0, 2).toUpperCase() || "AD"}
+            </div>
           </div>
         </nav>
       )}
 
+      {/* Admin Bottom Navigation - Mobile Only */}
+      {role === "admin" && (
+        <nav className="admin-bottom-nav">
+          {[
+            {
+              view: "dashboard",
+              label: "Dashboard",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                  <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                </svg>
+              )
+            },
+            {
+              view: "arima",
+              label: "ARIMA",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+              )
+            },
+            {
+              view: "fundamental",
+              label: "Fundamental",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+                  <line x1="6" y1="20" x2="6" y2="14"/>
+                </svg>
+              )
+            },
+            {
+              view: "admin_mgmt",
+              label: "Admin",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              )
+            },
+            {
+              view: "profile",
+              label: "Profil",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+              )
+            },
+          ].map(({ view, label, icon }) => (
+            <button
+              key={view}
+              className={`admin-bottom-nav-item ${currentView === view ? "active" : ""}`}
+              onClick={() => setCurrentView(view)}
+            >
+              {icon}
+              <span>{label}</span>
+            </button>
+          ))}
+          <button
+            className={`admin-bottom-nav-item ${showGuide ? "active" : ""}`}
+            onClick={() => setShowGuide(true)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            <span>Panduan</span>
+          </button>
+        </nav>
+      )}
+
       {/* Content */}
+      {showGuide && <BeginnerGuide onClose={() => setShowGuide(false)} />}
       <section className="content-wrapper">
         {/* Topbar - Admin Only */}
         {role === "admin" && (
@@ -571,6 +724,9 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
             <p>{viewSubtitles[currentView]}</p>
           </div>
           <div className="topbar-actions" style={{ justifyContent: "flex-end", gap: "16px" }}>
+            <button className={`beginner-toggle-btn ${beginnerMode ? "active" : ""}`} onClick={() => setBeginnerMode(b => !b)}>
+              {beginnerMode ? "🎓 Mode Pemula: ON" : "🎓 Mode Pemula"}
+            </button>
             <button className="topbar-icon-btn" onClick={() => setCurrentView("profile")} title="Pengaturan Profil"><Settings size={18} /></button>
             <div className={`profile-avatar ${role !== "admin" ? "visitor" : ""}`} style={{ width: 34, height: 34, fontSize: 12, cursor: "pointer" }} onClick={() => setCurrentView("profile")}>
               {currentUser?.username?.slice(0, 2).toUpperCase() || (role === "admin" ? "AD" : "PG")}
@@ -632,6 +788,14 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
                   Mulai dari halaman <strong>Prediksi ARIMA</strong> untuk upload data harga saham,
                   lalu ke <strong>Fundamental</strong> untuk upload laporan keuangan.
                 </p>
+                {role !== "admin" && (
+                  <button
+                    onClick={() => setShowGuide(true)}
+                    style={{ marginTop: 16, padding: "9px 20px", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 8, color: "#fbbf24", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}
+                  >
+                    📚 Baru di sini? Baca Panduan Pemula
+                  </button>
+                )}
               </div>
             )}
             {/* Partial state — hanya ARIMA */}
@@ -662,29 +826,58 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
 
               {/* ── Row 1: 4 Metric Cards ── */}
               <div className="grid-4">
-                <MetricCard
-                  label="Harga Penutupan"
-                  value={result?.arima?.actual_tail?.slice(-1)[0]?.value != null ? formatRupiah(result.arima.actual_tail.slice(-1)[0].value) : "-"}
-                  subtext={`Data per ${result?.arima?.preprocessing?.end_date || "-"}`}
-                />
-                <MetricCard
-                  label="Akurasi Model"
-                  value={accuracy || "-"}
-                  subtext={`Model ${result?.arima?.model?.order ? `ARIMA(${result.arima.model.order.join(",")})` : "-"} · MAPE ${result?.arima?.metrics?.mape != null ? result.arima.metrics.mape.toFixed(1) + "%" : "-"}`}
-                  isTrendUp={result?.arima?.metrics?.mape != null && result.arima.metrics.mape < 10}
-                />
-                <MetricCard
-                  label="Status Valuasi"
-                  value={result?.fundamental?.status ? result.fundamental.status.toUpperCase() : "-"}
-                  subtext={result?.fundamental?.latest?.intrinsic_value != null ? `Intrinsik: ${formatRupiah(result.fundamental.latest.intrinsic_value)}` : "Belum ada data fundamental"}
-                  isTrendUp={result?.fundamental?.status === "undervalued"}
-                />
-                <MetricCard
-                  label="ROE"
-                  value={result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(1)}%` : "-"}
-                  subtext={result?.fundamental?.latest?.per != null ? `P/E Ratio: ${result.fundamental.latest.per.toFixed(1)}x` : "Belum ada data fundamental"}
-                  isTrendUp={result?.fundamental?.latest?.roe != null && result.fundamental.latest.roe > 0.12}
-                />
+                <div>
+                  <MetricCard
+                    label="Harga Penutupan"
+                    value={result?.arima?.actual_tail?.slice(-1)[0]?.value != null ? formatRupiah(result.arima.actual_tail.slice(-1)[0].value) : "-"}
+                    subtext={`Data per ${result?.arima?.preprocessing?.end_date || "-"}`}
+                  />
+                  {beginnerMode && <div className="beginner-hint">💡 Harga terakhir saham TLKM ditutup di bursa. Ini patokan harga saat ini.</div>}
+                </div>
+                <div>
+                  <MetricCard
+                    label="Akurasi Model"
+                    value={accuracy || "-"}
+                    subtext={`Model ${result?.arima?.model?.order ? `ARIMA(${result.arima.model.order.join(",")})` : "-"} · MAPE ${result?.arima?.metrics?.mape != null ? result.arima.metrics.mape.toFixed(1) + "%" : "-"}`}
+                    isTrendUp={result?.arima?.metrics?.mape != null && result.arima.metrics.mape < 10}
+                  />
+                  {beginnerMode && (() => {
+                    const mape = result?.arima?.metrics?.mape;
+                    if (mape == null) return null;
+                    const cls = mape < 10 ? "good" : mape < 20 ? "warn" : "warn";
+                    const msg = mape < 10 ? "✅ Akurasi sangat baik — prediksi cukup dapat diandalkan" : mape < 20 ? "⚠️ Akurasi baik — prediksi cukup handal, tetap perhatikan CI" : "⚠️ Akurasi cukup — gunakan rentang CI sebagai acuan";
+                    return <div className={`beginner-hint ${cls}`}>{msg}</div>;
+                  })()}
+                </div>
+                <div>
+                  <MetricCard
+                    label="Status Valuasi"
+                    value={result?.fundamental?.status ? result.fundamental.status.toUpperCase() : "-"}
+                    subtext={result?.fundamental?.latest?.intrinsic_value != null ? `Intrinsik: ${formatRupiah(result.fundamental.latest.intrinsic_value)}` : "Belum ada data fundamental"}
+                    isTrendUp={result?.fundamental?.status === "undervalued"}
+                  />
+                  {beginnerMode && result?.fundamental?.status && (
+                    <div className={`beginner-hint ${result.fundamental.status === "undervalued" ? "good" : result.fundamental.status === "overvalued" ? "danger" : "warn"}`}>
+                      {result.fundamental.status === "undervalued" && "✅ Harga saham lebih murah dari nilai wajarnya — potensi peluang beli"}
+                      {result.fundamental.status === "overvalued" && "🔴 Harga saham lebih mahal dari nilai wajarnya — pertimbangkan risiko"}
+                      {result.fundamental.status === "fairvalued" && "⚖️ Harga saham mendekati nilai wajarnya — harga adil saat ini"}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <MetricCard
+                    label="ROE"
+                    value={result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(1)}%` : "-"}
+                    subtext={result?.fundamental?.latest?.per != null ? `P/E Ratio: ${result.fundamental.latest.per.toFixed(1)}x` : "Belum ada data fundamental"}
+                    isTrendUp={result?.fundamental?.latest?.roe != null && result.fundamental.latest.roe > 0.12}
+                  />
+                  {beginnerMode && result?.fundamental?.latest?.roe != null && (() => {
+                    const roe = result.fundamental.latest.roe * 100;
+                    const cls = roe >= 15 ? "good" : roe >= 10 ? "warn" : "danger";
+                    const msg = roe >= 15 ? `✅ ROE ${roe.toFixed(1)}% — perusahaan sangat efisien menggunakan modal` : roe >= 10 ? `⚠️ ROE ${roe.toFixed(1)}% — cukup baik, di atas rata-rata minimal` : `🔴 ROE ${roe.toFixed(1)}% — efisiensi modal perlu diperhatikan`;
+                    return <div className={`beginner-hint ${cls}`}>{msg}</div>;
+                  })()}
+                </div>
               </div>
 
               {/* ── Row 2: Chart (kiri) + Panel Proyeksi Terpadu (kanan) ── */}
@@ -738,6 +931,11 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
                     <div className="arima-dark-growth">
                       {dashboardForecastPrice ? `Estimasi harga pada ${dashboardForecastPrice.date}` : `Hari terakhir: ${result?.arima?.forecast?.slice(-1)[0]?.date || "-"}`}
                     </div>
+                    {beginnerMode && (
+                      <div className="beginner-hint" style={{ marginTop: 8 }}>
+                        💡 Ini perkiraan harga saham TLKM berdasarkan pola historis. Bukan kepastian — gunakan sebagai referensi awal.
+                      </div>
+                    )}
                   </div>
 
                   {/* Stats model */}
@@ -746,21 +944,50 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
                       const activeArima = dashboardForecastResult || result?.arima;
                       const lastFc = activeArima?.forecast?.slice(-1)[0];
                       const displayPrice = dashboardForecastPrice?.value ?? targetPrice;
-                      return [
-                        ["Akurasi", accuracy || "-", "Dihitung dari data testing historis (100% - MAPE). Tidak berubah saat ganti tanggal proyeksi."],
-                        ["MAPE", result?.arima?.metrics?.mape != null ? `${result.arima.metrics.mape.toFixed(2)}% (${result.arima.metrics.mape < 10 ? "Sangat Baik" : result.arima.metrics.mape < 20 ? "Baik" : "Cukup"})` : "-", "Mean Absolute Percentage Error — rata-rata persentase kesalahan. < 10% sangat baik, 10–20% baik, > 20% cukup/perlu perhatian."],
-                        ["MAE", result?.arima?.metrics?.mae != null ? formatRupiah(result.arima.metrics.mae) : "-", "Mean Absolute Error — rata-rata selisih nominal antara prediksi dan aktual saat testing."],
-                        ["RMSE", result?.arima?.metrics?.rmse != null ? formatRupiah(result.arima.metrics.rmse) : "-", "Root Mean Square Error — lebih sensitif terhadap error besar dibanding MAE. Semakin kecil semakin baik."],
-                        ["Batas Bawah (95% CI)", lastFc?.lower != null ? formatRupiah(lastFc.lower) : (displayPrice != null ? formatRupiah(displayPrice * 0.98) : "-"), "Confidence Interval 95% — batas bawah rentang harga yang diperkirakan. Makin jauh tanggal target, makin lebar rentang ini."],
-                        ["Batas Atas (95% CI)", lastFc?.upper != null ? formatRupiah(lastFc.upper) : (displayPrice != null ? formatRupiah(displayPrice * 1.02) : "-"), "Confidence Interval 95% — batas atas rentang harga yang diperkirakan. Makin jauh tanggal target, makin lebar rentang ini."],
+                      const mapeVal = result?.arima?.metrics?.mape;
+                      const rows = [
+                        {
+                          label: "Akurasi", val: accuracy || "-",
+                          tip: "Dihitung dari data testing historis (100% - MAPE). Tidak berubah saat ganti tanggal proyeksi.",
+                          hint: beginnerMode ? "Seberapa sering prediksi mendekati harga nyata. Makin tinggi makin baik." : null,
+                        },
+                        {
+                          label: "MAPE", val: mapeVal != null ? `${mapeVal.toFixed(2)}% (${mapeVal < 10 ? "Sangat Baik" : mapeVal < 20 ? "Baik" : "Cukup"})` : "-",
+                          tip: "Mean Absolute Percentage Error — rata-rata persentase kesalahan. < 10% sangat baik, 10–20% baik, > 20% cukup/perlu perhatian.",
+                          hint: beginnerMode && mapeVal != null ? `Rata-rata prediksi meleset ±${mapeVal.toFixed(1)}% dari harga asli. ${mapeVal < 20 ? "Masih dalam batas wajar." : "Gunakan rentang CI sebagai acuan."}` : null,
+                        },
+                        {
+                          label: "MAE", val: result?.arima?.metrics?.mae != null ? formatRupiah(result.arima.metrics.mae) : "-",
+                          tip: "Mean Absolute Error — rata-rata selisih nominal antara prediksi dan aktual saat testing.",
+                          hint: beginnerMode && result?.arima?.metrics?.mae != null ? `Rata-rata prediksi meleset sebesar ${formatRupiah(result.arima.metrics.mae)} per lembar saham.` : null,
+                        },
+                        {
+                          label: "RMSE", val: result?.arima?.metrics?.rmse != null ? formatRupiah(result.arima.metrics.rmse) : "-",
+                          tip: "Root Mean Square Error — lebih sensitif terhadap error besar dibanding MAE. Semakin kecil semakin baik.",
+                          hint: beginnerMode ? "Ukuran kesalahan prediksi yang lebih ketat — makin kecil makin baik." : null,
+                        },
+                        {
+                          label: "Batas Bawah (95% CI)", val: lastFc?.lower != null ? formatRupiah(lastFc.lower) : (displayPrice != null ? formatRupiah(displayPrice * 0.98) : "-"),
+                          tip: "Confidence Interval 95% — batas bawah rentang harga yang diperkirakan. Makin jauh tanggal target, makin lebar rentang ini.",
+                          hint: beginnerMode ? "Harga terendah yang kemungkinan terjadi (95% kemungkinan harga di atas ini)." : null,
+                        },
+                        {
+                          label: "Batas Atas (95% CI)", val: lastFc?.upper != null ? formatRupiah(lastFc.upper) : (displayPrice != null ? formatRupiah(displayPrice * 1.02) : "-"),
+                          tip: "Confidence Interval 95% — batas atas rentang harga yang diperkirakan. Makin jauh tanggal target, makin lebar rentang ini.",
+                          hint: beginnerMode ? "Harga tertinggi yang kemungkinan terjadi (95% kemungkinan harga di bawah ini)." : null,
+                        },
                       ];
-                    })().map(([label, val, tip]) => (
-                      <div className="arima-dark-stat-row" key={label}>
-                        <span className="arima-dark-stat-label" style={{ display: "flex", alignItems: "center" }}>
-                          {label}
-                          <Tooltip text={tip}><InfoIcon /></Tooltip>
-                        </span>
-                        <span className="arima-dark-stat-val">{val}</span>
+                      return rows;
+                    })().map(({ label, val, tip, hint }) => (
+                      <div key={label}>
+                        <div className="arima-dark-stat-row">
+                          <span className="arima-dark-stat-label" style={{ display: "flex", alignItems: "center" }}>
+                            {label}
+                            <Tooltip text={tip}><InfoIcon /></Tooltip>
+                          </span>
+                          <span className="arima-dark-stat-val">{val}</span>
+                        </div>
+                        {hint && <div className="beginner-hint" style={{ marginTop: 4, marginBottom: 4 }}>{hint}</div>}
                       </div>
                     ))}
                   </div>
@@ -802,14 +1029,17 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     {[
-                      { label: "P/E Ratio", value: result?.fundamental?.latest?.per != null ? `${result.fundamental.latest.per.toFixed(2)}x` : "-" },
-                      { label: "ROE", value: result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(2)}%` : "-" },
-                      { label: "DER", value: result?.fundamental?.latest?.der != null ? `${result.fundamental.latest.der.toFixed(2)}x` : "-" },
-                      { label: "ROA", value: result?.fundamental?.latest?.roa != null ? `${(result.fundamental.latest.roa * 100).toFixed(2)}%` : "-" },
-                    ].map(({ label, value }) => (
-                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-color)" }}>
-                        <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{label}</span>
-                        <strong style={{ fontSize: 14, color: "var(--text-main)" }}>{value}</strong>
+                      { label: "P/E Ratio", value: result?.fundamental?.latest?.per != null ? `${result.fundamental.latest.per.toFixed(2)}x` : "-", hint: result?.fundamental?.latest?.per != null ? (result.fundamental.latest.per < 10 ? { msg: "Murah — investor bayar rendah per unit laba", cls: "good" } : result.fundamental.latest.per < 20 ? { msg: "Wajar — harga setimpal dengan laba perusahaan", cls: "warn" } : { msg: "Mahal — investor bayar premium tinggi per unit laba", cls: "danger" }) : null },
+                      { label: "ROE", value: result?.fundamental?.latest?.roe != null ? `${(result.fundamental.latest.roe * 100).toFixed(2)}%` : "-", hint: result?.fundamental?.latest?.roe != null ? (result.fundamental.latest.roe * 100 >= 15 ? { msg: "Sangat efisien — perusahaan menghasilkan laba tinggi dari modal", cls: "good" } : result.fundamental.latest.roe * 100 >= 10 ? { msg: "Cukup efisien — penggunaan modal cukup baik", cls: "warn" } : { msg: "Kurang efisien — perlu perhatian lebih", cls: "danger" }) : null },
+                      { label: "DER", value: result?.fundamental?.latest?.der != null ? `${result.fundamental.latest.der.toFixed(2)}x` : "-", hint: result?.fundamental?.latest?.der != null ? (result.fundamental.latest.der < 1 ? { msg: "Aman — hutang lebih kecil dari modal sendiri", cls: "good" } : result.fundamental.latest.der < 2 ? { msg: "Wajar — hutang terkendali untuk sektor ini", cls: "warn" } : { msg: "Tinggi — perusahaan cukup banyak berhutang", cls: "danger" }) : null },
+                      { label: "ROA", value: result?.fundamental?.latest?.roa != null ? `${(result.fundamental.latest.roa * 100).toFixed(2)}%` : "-", hint: result?.fundamental?.latest?.roa != null ? (result.fundamental.latest.roa * 100 >= 5 ? { msg: "Baik — aset digunakan secara produktif", cls: "good" } : { msg: "Cukup — produktivitas aset masih bisa ditingkatkan", cls: "warn" }) : null },
+                    ].map(({ label, value, hint }) => (
+                      <div key={label}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-color)" }}>
+                          <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{label}</span>
+                          <strong style={{ fontSize: 14, color: "var(--text-main)" }}>{value}</strong>
+                        </div>
+                        {beginnerMode && hint && <div className={`beginner-hint ${hint.cls}`}>{hint.msg}</div>}
                       </div>
                     ))}
                   </div>
@@ -868,7 +1098,7 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
         {/* ── VIEW: ARIMA ── */}
         {currentView === "arima" && (
           <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="arima-view-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>Saham / <strong>TLKM.JK</strong></span>
                 <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>Proyeksi pergerakan harga saham Telkom menggunakan model statistik ARIMA.</p>
@@ -937,13 +1167,13 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
             )}
 
             {/* Date Picker ARIMA */}
-            <div className="card" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", color: "white" }}>
+            <div className="card arima-datepicker-card" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", color: "white" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: "white" }}>🔮 Proyeksi Harga Berkelanjutan</h3>
                   <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Pilih tanggal target untuk melihat semua prediksi harga hingga tanggal tersebut</p>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <div className="arima-datepicker-inner" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <input
                     type="date"
                     value={arimaTargetDate}
@@ -1160,13 +1390,24 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
               </div>
             )}
 
-            <div className="card">
+              <div className="card">
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Mengenal ARIMA</h3>
               <ul className="explanation-list">
                 <li><strong>AutoRegressive (p):</strong> Mengukur pengaruh tren masa lalu terhadap nilai saat ini.</li>
                 <li><strong>Integrated (d):</strong> Menstabilkan data harga saham melalui proses differencing.</li>
                 <li><strong>Moving Average (q):</strong> Menghaluskan fluktuasi jangka pendek akibat gangguan acak pasar.</li>
               </ul>
+              {beginnerMode && (
+                <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(59,130,246,0.08)", borderRadius: 10, borderLeft: "3px solid rgba(59,130,246,0.4)" }}>
+                  <p style={{ fontSize: 13, color: "#93c5fd", fontWeight: 600, marginBottom: 8 }}>💡 Analogi Sederhana</p>
+                  <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6 }}>
+                    Bayangkan ARIMA seperti cuaca. Kita tidak bisa 100% pasti, tapi dengan melihat pola 
+                    cuaca minggu lalu (AutoRegressive), perubahan suhu kemarin (Integrated), dan 
+                    gangguan mendadak seperti hujan deras (Moving Average) — kita bisa memperkirakan 
+                    cuaca besok dengan cukup baik.
+                  </p>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -1244,6 +1485,12 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
               </div>
             )}
             {latestFund && (<>
+              {/* Banner mode pemula di fundamental */}
+              {beginnerMode && (
+                <div className="beginner-hint" style={{ padding: "12px 16px", borderRadius: 10, borderLeft: "3px solid rgba(251,191,36,0.5)", background: "rgba(251,191,36,0.07)", color: "#fde68a", fontSize: 13 }}>
+                  🎓 <strong>Mode Pemula aktif</strong> — Setiap indikator di bawah ini dilengkapi penjelasan singkat. Klik tombol <strong>📚 Panduan</strong> untuk penjelasan lengkap.
+                </div>
+              )}
               <div className="card">
                 <div className="card-header-flex">
                   <div className="card-title-section">
@@ -1253,18 +1500,69 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
                 </div>
                 <div className="table-responsive">
                   <table className="custom-table">
-                    <thead><tr><th>Indikator</th><th>Nilai</th><th>Keterangan</th></tr></thead>
+                    <thead><tr><th>Indikator</th><th>Nilai</th><th>Keterangan{beginnerMode && " & Interpretasi"}</th></tr></thead>
                     <tbody>
                       {[
-                        ["EPS — Earnings Per Share", latestFund.eps != null ? `IDR ${latestFund.eps.toLocaleString("id-ID", { maximumFractionDigits: 2 })}` : "-", "Laba bersih per lembar saham"],
-                        ["PER — Price to Earnings Ratio", latestFund.per != null ? `${latestFund.per.toFixed(2)}x` : "-", "Harga saham dibagi EPS"],
-                        ["ROE — Return on Equity", latestFund.roe != null ? `${(latestFund.roe * 100).toFixed(2)}%` : "-", "Efisiensi penggunaan modal sendiri"],
-                        ["DER — Debt to Equity Ratio", latestFund.der != null ? `${latestFund.der.toFixed(2)}x` : "-", "Rasio hutang terhadap ekuitas"],
-                        ["BVPS — Book Value Per Share", latestFund.bvps != null ? `IDR ${latestFund.bvps.toLocaleString("id-ID", { maximumFractionDigits: 2 })}` : "-", "Nilai buku per lembar saham"],
-                        ["PBV — Price to Book Value", latestFund.pbv != null ? `${latestFund.pbv.toFixed(2)}x` : "-", "Harga saham dibagi nilai buku"],
-                        ["Harga Pasar", latestFund.market_price != null ? formatRupiah(latestFund.market_price) : "-", "Harga penutupan terakhir di dataset"],
-                      ].map(([label, value, desc]) => (
-                        <tr key={label}><td><strong>{label}</strong></td><td><strong>{value}</strong></td><td>{desc}</td></tr>
+                        {
+                          label: "EPS — Earnings Per Share",
+                          value: latestFund.eps != null ? `IDR ${latestFund.eps.toLocaleString("id-ID", { maximumFractionDigits: 2 })}` : "-",
+                          desc: "Laba bersih per lembar saham",
+                          hint: latestFund.eps != null ? (latestFund.eps > 0 ? `✅ EPS positif — perusahaan menghasilkan laba ${latestFund.eps.toLocaleString("id-ID", { maximumFractionDigits: 0 })} per lembar saham` : "🔴 EPS negatif — perusahaan merugi, perlu perhatian") : null,
+                          hintCls: latestFund.eps != null && latestFund.eps > 0 ? "good" : "danger",
+                        },
+                        {
+                          label: "PER — Price to Earnings Ratio",
+                          value: latestFund.per != null ? `${latestFund.per.toFixed(2)}x` : "-",
+                          desc: "Harga saham dibagi EPS",
+                          hint: latestFund.per != null ? (latestFund.per < 10 ? `✅ PER ${latestFund.per.toFixed(1)}x — saham relatif murah dibanding labanya` : latestFund.per < 20 ? `⚖️ PER ${latestFund.per.toFixed(1)}x — harga wajar, setimpal dengan laba` : `⚠️ PER ${latestFund.per.toFixed(1)}x — investor membayar premium tinggi`) : null,
+                          hintCls: latestFund.per != null ? (latestFund.per < 10 ? "good" : latestFund.per < 20 ? "warn" : "warn") : null,
+                        },
+                        {
+                          label: "ROE — Return on Equity",
+                          value: latestFund.roe != null ? `${(latestFund.roe * 100).toFixed(2)}%` : "-",
+                          desc: "Efisiensi penggunaan modal sendiri",
+                          hint: latestFund.roe != null ? (latestFund.roe * 100 >= 15 ? `✅ ROE ${(latestFund.roe*100).toFixed(1)}% — perusahaan sangat efisien menggunakan modal` : latestFund.roe * 100 >= 10 ? `⚖️ ROE ${(latestFund.roe*100).toFixed(1)}% — efisiensi modal cukup baik` : `⚠️ ROE ${(latestFund.roe*100).toFixed(1)}% — efisiensi modal perlu diperhatikan`) : null,
+                          hintCls: latestFund.roe != null ? (latestFund.roe * 100 >= 15 ? "good" : latestFund.roe * 100 >= 10 ? "warn" : "danger") : null,
+                        },
+                        {
+                          label: "DER — Debt to Equity Ratio",
+                          value: latestFund.der != null ? `${latestFund.der.toFixed(2)}x` : "-",
+                          desc: "Rasio hutang terhadap ekuitas",
+                          hint: latestFund.der != null ? (latestFund.der < 1 ? `✅ DER ${latestFund.der.toFixed(2)}x — hutang terkendali, di bawah modal sendiri` : latestFund.der < 2 ? `⚖️ DER ${latestFund.der.toFixed(2)}x — hutang wajar untuk sektor telekomunikasi` : `⚠️ DER ${latestFund.der.toFixed(2)}x — hutang cukup tinggi, perhatikan kemampuan bayar`) : null,
+                          hintCls: latestFund.der != null ? (latestFund.der < 1 ? "good" : latestFund.der < 2 ? "warn" : "danger") : null,
+                        },
+                        {
+                          label: "BVPS — Book Value Per Share",
+                          value: latestFund.bvps != null ? `IDR ${latestFund.bvps.toLocaleString("id-ID", { maximumFractionDigits: 2 })}` : "-",
+                          desc: "Nilai buku per lembar saham",
+                          hint: beginnerMode ? "Nilai aset bersih perusahaan dibagi jumlah lembar saham. Dibandingkan dengan harga pasar untuk menilai valuasi." : null,
+                          hintCls: "warn",
+                        },
+                        {
+                          label: "PBV — Price to Book Value",
+                          value: latestFund.pbv != null ? `${latestFund.pbv.toFixed(2)}x` : "-",
+                          desc: "Harga saham dibagi nilai buku",
+                          hint: latestFund.pbv != null ? (latestFund.pbv < 1 ? `✅ PBV ${latestFund.pbv.toFixed(2)}x — saham dijual di bawah nilai aset bersihnya` : latestFund.pbv < 3 ? `⚖️ PBV ${latestFund.pbv.toFixed(2)}x — valuasi wajar` : `⚠️ PBV ${latestFund.pbv.toFixed(2)}x — harga jauh di atas nilai buku`) : null,
+                          hintCls: latestFund.pbv != null ? (latestFund.pbv < 1 ? "good" : latestFund.pbv < 3 ? "warn" : "danger") : null,
+                        },
+                        {
+                          label: "Harga Pasar",
+                          value: latestFund.market_price != null ? formatRupiah(latestFund.market_price) : "-",
+                          desc: "Harga penutupan terakhir di dataset",
+                          hint: null,
+                          hintCls: null,
+                        },
+                      ].map(({ label, value, desc, hint, hintCls }) => (
+                        <tr key={label}>
+                          <td><strong>{label}</strong></td>
+                          <td><strong>{value}</strong></td>
+                          <td>
+                            {desc}
+                            {beginnerMode && hint && (
+                              <div className={`beginner-hint ${hintCls}`} style={{ marginTop: 4 }}>{hint}</div>
+                            )}
+                          </td>
+                        </tr>
                       ))}
                       <tr>
                         <td><strong>Nilai Intrinsik</strong></td>
@@ -1273,18 +1571,42 @@ function App({ currentUser, onLogout, onUpdateUser, onGoLogin = () => {} }) {
                             {latestFund.intrinsic_value != null ? formatRupiah(latestFund.intrinsic_value) : "-"}
                           </strong>
                         </td>
-                        <td>EPS × PER Wajar ({params.per_wajar}x) — {latestFund.intrinsic_value != null && latestFund.market_price != null ? (latestFund.intrinsic_value > latestFund.market_price ? "Saham undervalued ✓" : "Saham overvalued ✗") : "-"}</td>
+                        <td>
+                          EPS × PER Wajar ({params.per_wajar}x) — {latestFund.intrinsic_value != null && latestFund.market_price != null ? (latestFund.intrinsic_value > latestFund.market_price ? "Saham undervalued ✓" : "Saham overvalued ✗") : "-"}
+                          {beginnerMode && latestFund.intrinsic_value != null && latestFund.market_price != null && (
+                            <div className={`beginner-hint ${latestFund.intrinsic_value > latestFund.market_price ? "good" : "danger"}`} style={{ marginTop: 4 }}>
+                              {latestFund.intrinsic_value > latestFund.market_price
+                                ? `✅ Nilai wajar ${formatRupiah(latestFund.intrinsic_value)} > harga pasar ${formatRupiah(latestFund.market_price)} — saham relatif murah (undervalued)`
+                                : `🔴 Nilai wajar ${formatRupiah(latestFund.intrinsic_value)} < harga pasar ${formatRupiah(latestFund.market_price)} — saham relatif mahal (overvalued)`}
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
               <div className="grid-3">
-                <MetricCard label="Harga Pasar" value={latestFund.market_price != null ? formatRupiah(latestFund.market_price) : "-"} subtext="Harga saham terakhir" />
-                <MetricCard label="Nilai Intrinsik" value={latestFund.intrinsic_value != null ? formatRupiah(latestFund.intrinsic_value) : "-"} subtext={`Berdasarkan PER Wajar ${params.per_wajar}x`} />
-                <MetricCard label="Selisih Valuasi" value={latestFund.valuation_gap != null ? formatRupiah(Math.abs(latestFund.valuation_gap)) : "-"}
-                  subtext={latestFund.valuation_gap != null ? (latestFund.valuation_gap > 0 ? "Di bawah nilai wajar (Undervalued)" : "Di atas nilai wajar (Overvalued)") : "-"}
-                  isTrendUp={latestFund.valuation_gap > 0} />
+                <div>
+                  <MetricCard label="Harga Pasar" value={latestFund.market_price != null ? formatRupiah(latestFund.market_price) : "-"} subtext="Harga saham terakhir" />
+                  {beginnerMode && <div className="beginner-hint">Harga yang saat ini diperdagangkan di bursa saham.</div>}
+                </div>
+                <div>
+                  <MetricCard label="Nilai Intrinsik" value={latestFund.intrinsic_value != null ? formatRupiah(latestFund.intrinsic_value) : "-"} subtext={`Berdasarkan PER Wajar ${params.per_wajar}x`} />
+                  {beginnerMode && <div className="beginner-hint">Nilai "sebenarnya" saham berdasarkan kinerja keuangan perusahaan.</div>}
+                </div>
+                <div>
+                  <MetricCard label="Selisih Valuasi" value={latestFund.valuation_gap != null ? formatRupiah(Math.abs(latestFund.valuation_gap)) : "-"}
+                    subtext={latestFund.valuation_gap != null ? (latestFund.valuation_gap > 0 ? "Di bawah nilai wajar (Undervalued)" : "Di atas nilai wajar (Overvalued)") : "-"}
+                    isTrendUp={latestFund.valuation_gap > 0} />
+                  {beginnerMode && latestFund.valuation_gap != null && (
+                    <div className={`beginner-hint ${latestFund.valuation_gap > 0 ? "good" : "danger"}`}>
+                      {latestFund.valuation_gap > 0
+                        ? `✅ Saham diskon ${formatRupiah(Math.abs(latestFund.valuation_gap))} dari nilai wajarnya — potensi peluang`
+                        : `⚠️ Saham premium ${formatRupiah(Math.abs(latestFund.valuation_gap))} di atas nilai wajarnya — pertimbangkan risiko`}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="card">
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Kesimpulan Analisis</h3>
